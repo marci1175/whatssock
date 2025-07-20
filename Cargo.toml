@@ -1,0 +1,3 @@
+[workspace]
+members = ["whatssock-desktop", "whatssock-server", "whatssock-mobile", "whatssock-web", "whatssock-lib"]
+resolver = "3"

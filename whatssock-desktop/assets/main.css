@@ -1,0 +1,326 @@
+body {
+    background-color: #000000;
+    color: #a3a3a3;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0px;
+    padding: 0px;
+    background-image: 
+    linear-gradient(to right, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.title {
+  text-shadow:
+    0 0 5px rgba(120, 120, 120, 0.9),
+    0 0 10px rgba(120, 120, 120, 0.9),
+    0 0 20px rgba(120, 120, 120, 0.2);
+  animation-name: dehovered_title;
+  animation-duration: 300ms;
+  animation-fill-mode: backwards;
+}
+
+#login_page_container {
+    align-content: center;
+}
+
+#main_title {
+  margin-top: 30px;
+  font-size: xx-large;
+  text-align: center;
+}
+
+.title:hover {
+  animation-name: hovered_title;
+  animation-duration: 300ms;
+  animation-fill-mode: forwards;
+}
+
+#main_title_footer {
+  text-align: center;
+  font-size: small;
+}
+
+#user_input_fields {
+  padding-top: 10px;
+  display: flex;
+  gap: 20px;
+  flex-direction: column;
+  align-items: center;     /* Center horizontally */
+  justify-content: center; /* Center vertically if height is set */
+  margin: auto;
+}
+
+#failed {
+  color: red;
+  font-size: inherit;
+}
+
+#attempted {
+  color: grey;
+  font-size: inherit;
+}
+
+#succeeded {
+  color: rgb(0, 255, 0);
+  font-size: inherit;
+}
+
+#login_result {
+  font-size: small;
+}
+
+label {
+    font-size: small;
+}
+
+input,
+.button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.3em 0.6em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  color: inherit;
+  background-color: #0f0f0f;
+  transition: border-color 0.25s;
+  box-shadow: 0px 0px 10px 4px rgba(149, 149, 149, 0.2);
+  text-shadow: 0px 0px 10px 4px rgba(149, 149, 149, 0.2);
+  animation-name: deselected_input;
+  animation-duration: 200ms;
+  animation-fill-mode: backwards;
+  outline: none;
+}
+
+.button {
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+
+.button:active {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+input:hover, .button:hover {
+  animation-name: selected_input;
+  animation-duration: 300ms;
+  animation-fill-mode: forwards;
+}
+
+@keyframes selected_input {
+  from {
+    box-shadow: 0px 0px 10px 4px rgba(183, 183, 183, 0.2);
+  }
+  to {
+    box-shadow: 0px 0px 10px 4px rgba(183, 183, 183,  0.5);
+  }
+}
+
+@keyframes deselected_input {
+  to {
+    box-shadow: 0px 0px 10px 4px rgba(183, 183, 183,  0.2);
+  }
+  from {
+    box-shadow: 0px 0px 10px 4px rgba(183, 183, 183,  0.5);
+  }
+}
+
+@keyframes hovered_title {
+  from {
+    text-shadow:
+    0 0 5px rgba(120, 120, 120, 0.9),
+    0 0 10px rgba(120, 120, 120, 0.9),
+    0 0 20px rgba(120, 120, 120, 0.2);
+  }
+  to {
+    text-shadow:
+    0 0 5px rgba(170, 170, 170, 0.9),
+    0 0 10px rgba(170, 170, 170, 0.9),
+    0 0 20px rgba(170, 170, 170, 0.2);
+  }
+}
+
+@keyframes dehovered_title {
+  to {
+    text-shadow:
+    0 0 5px rgba(120, 120, 120, 0.9),
+    0 0 10px rgba(120, 120, 120, 0.9),
+    0 0 20px rgba(120, 120, 120, 0.2);
+  }
+  from {
+    text-shadow:
+    0 0 5px rgba(170, 170, 170, 0.9),
+    0 0 10px rgba(170, 170, 170, 0.9),
+    0 0 20px rgba(170, 170, 170, 0.2);
+  }
+}
+
+.window {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+.sidepanel {
+  display: flex;
+  flex-direction: column;
+  color: white;
+  height: 100vh;
+  width: auto;
+  padding-top: 10px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+#sidepanel_left {
+  float: left;
+  text-align: left;
+  border-right: 1px solid #a3a3a3;
+  background-color: #000000;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.chatpanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.bottompanel {
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  bottom: 0;
+}
+
+#sidepanel_title {
+  display: flex;
+  padding: 0px 10px 10px 10px;
+  border-bottom: 1px solid #a3a3a3;
+  justify-content: center
+}
+
+#chatroom_node_title {
+  display: grid;
+  grid-auto-flow: column;
+  font-size: x-small;
+  color: inherit;
+}
+
+#chatroom_node_list {
+  height: 60vh;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  overflow: overlay;
+}
+
+/* Sets the basic style for both the buttons and the chat entries in the sidepanel */
+#chatroom_node, #user_control_panel_button {
+  /* Disable basic button highlighting */
+  border: 0px transparent;
+  background-color: #000000;
+  color: rgb(188, 188, 188);
+  border-top: 1px solid #a3a3a3;
+  border-bottom: 1px solid #a3a3a3;
+  padding: 0px 10px 10px 10px;
+  outline: none;
+}
+#chatroom_node:hover, #user_control_panel_button:hover {
+  background-color: #0f0f0f;
+}
+#chatroom_node:active, #user_control_panel_button:active, #selected_chatroom_node {
+  background-color: #1c1c1c;
+  color: white;
+}
+#selected_chatroom_node {
+  border: 1px solid white;
+  background-color: #000000;
+  padding: 0px 10px 10px 10px;
+}
+
+/* The whole user control panel, including the "logged in as" */
+#user_control_panel_area {
+  display: flex;
+  border-right: 1px solid #a3a3a3;
+  border-top: 1px solid #a3a3a3;
+  background-color: #000000;
+  flex-direction: column;
+  height: 40vh;
+  width: auto;
+}
+
+#user_control_panel_button {
+  display: block;
+  width: 100%;
+  height: 10%;
+}
+
+/* Contains the actual buttons of the ui*/
+#user_control_panel_buttons {
+  flex: 1 1 auto;
+  overflow: overlay;
+  width: inherit;
+}
+
+::-webkit-scrollbar {
+  background-color: transparent;
+  width: 10px;
+  border: 1px white solid;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ffffff;
+  border-radius: 10rem;
+}
+
+#new_chat_button {
+  color: #a3a3a3;
+  border: 0px transparent;
+  background-color: black;
+  font-size: large;
+}
+
+#chat_id_input_row {
+  display: flex;
+  flex-direction: row;
+}
+
+.dropdown button {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.dropdown .dropdown_content {
+  display: none;
+  position: absolute;
+  background-color: black;
+  outline: 1px white solid;
+}
+
+.dropdown:hover .dropdown_content {
+  display: block;
+}
+
+#chat_input {
+  flex: 1;
+  height: auto;
+  /* Divide the space between the button and the input */
+  border-right: 1px #a3a3a3 solid;
+}
+
+#chat_input_row {
+  display: flex;
+  flex: 1;
+}
+
+#send_message_button, #chat_input {
+  border-radius: 0px;
+  color: #a3a3a3;
+  box-shadow: 0px 0px 0px 0px rgba(149, 149, 149, 0.2);
+  text-shadow: 0px 0px 0px 0px rgba(149, 149, 149, 0.2);
+  animation-name: none;
+}

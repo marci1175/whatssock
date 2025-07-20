@@ -1,0 +1,20 @@
+[package]
+name = "whatssock-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+whatssock-lib = { path = "../whatssock-lib" }
+anyhow = "1.0.98"
+axum = {version = "0.8.4", features = ["macros"]}
+diesel = { version = "2.2.11", features = ["postgres", "chrono", "r2d2"] }
+dotenvy = "0.15.7"
+serde = {version = "1.0.219", features = ["derive"]}
+# kafka = "0.10.0"
+tokio = { version = "1.46.0", features = ["full"] }
+uuid = "1.17.0"
+r2d2 = "0.8.10"
+log = "0.4.27"
+chrono = "0.4.41"
+rand = "0.9.1"
+env_logger = "0.11.8"
