@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 whatssock-lib = { path = "../whatssock-lib" }
 anyhow = "1.0.98"
-axum = {version = "0.8.4", features = ["macros", "ws"]}
+axum = {version = "0.8.4", features = ["macros"]}
 diesel = { version = "2.2.11", features = ["postgres", "chrono", "r2d2"] }
 dotenvy = "0.15.7"
 serde = {version = "1.0.219", features = ["derive"]}

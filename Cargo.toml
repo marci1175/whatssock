@@ -1,3 +1,15 @@
 [workspace]
 members = ["whatssock-desktop", "whatssock-server", "whatssock-mobile", "whatssock-web", "whatssock-lib"]
 resolver = "3"
+
+[profile]
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"

@@ -468,16 +468,5 @@ pub fn generate_session_token() -> [u8; 32] {
 pub async fn handle_incoming_chatroom_message(
     State(state): State<ServerState>,
     Json(chatroom_request): Json<ChatMessage>,
-) -> Result<(), StatusCode> {
-    // Get a db connection from the pool
-    let pg_connection = state.pg_pool.get().map_err(|err| {
-        error!(
-            "An error occured while fetching login information from db: {}",
-            err
-        );
-
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(())
+) {
 }

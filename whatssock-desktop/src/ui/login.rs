@@ -1,11 +1,10 @@
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 use crate::{
     authentication::auth::{deserialize_into_user_session, store_user_session_on_disk},
-    HttpClient, Route, COOKIE_SAVE_PATH,
+    ApplicationContext, Route, COOKIE_SAVE_PATH,
 };
 use dioxus::{logger::tracing, prelude::*};
-use parking_lot::Mutex;
 use whatssock_lib::{client::UserInformation, UserSession};
 
 enum AttemptResult {
@@ -26,10 +25,11 @@ impl Display for AttemptResult {
 
 #[component]
 pub fn Login() -> Element {
+    let application_context = use_context::<ApplicationContext>();
+
+    let client = application_context.http_client;
     let navigator = use_navigator();
     let valid_token_redirect = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
-
-    let client = use_context::<Arc<Mutex<HttpClient>>>();
     let mut user_session_login: Signal<Option<(UserSession, UserInformation)>, SyncStorage> =
         use_signal_sync(|| None);
     let mut log_res: Signal<Option<AttemptResult>> = use_signal(|| None);

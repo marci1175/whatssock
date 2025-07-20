@@ -1,9 +1,16 @@
-use std::{fs, path::PathBuf, sync::LazyLock};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+};
 
 use dioxus::prelude::Routable;
 use dioxus::prelude::*;
 use dirs::data_local_dir;
+use parking_lot::Mutex;
 use reqwest::Client;
+use tokio::sync::mpsc::{Receiver, Sender};
+use tokio_tungstenite::tungstenite::Message;
 pub mod api_requests;
 pub mod authentication;
 pub mod ui;
@@ -46,3 +53,12 @@ pub static COOKIE_SAVE_PATH: LazyLock<PathBuf> = LazyLock::new(|| {
 
     cookie_save_path
 });
+
+pub type HttpWebClient = Arc<Mutex<HttpClient>>;
+
+#[derive(Clone)]
+pub struct ApplicationContext {
+    pub http_client: HttpWebClient,
+    pub websocket_client_out: Sender<()>,
+    pub websocket_client_in: Arc<Mutex<Receiver<Message>>>,
+}

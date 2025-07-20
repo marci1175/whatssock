@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
-use parking_lot::Mutex;
 use whatssock_lib::{
     client::UserInformation, ChatMessage, CreateChatroomRequest, FetchChatroomResponse,
     FetchKnownChatroomResponse, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
 };
 
-use crate::{HttpClient, Route};
+use crate::{ApplicationContext, Route};
 
 #[component]
 pub fn MainPage() -> Element {
+    let application_ctx = use_context::<ApplicationContext>();
+
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
     let mut toast: Signal<ToastManager> = use_context();
 
@@ -20,7 +21,7 @@ pub fn MainPage() -> Element {
     let user_session_clone_create_chatroom = user_session.clone();
     let user_session_clone_send_message = user_session.clone();
 
-    let client = use_context::<Arc<Mutex<HttpClient>>>();
+    let client = application_ctx.http_client;
     let client_clone = client.clone();
     let client_clone_add_chatroom = client.clone();
     let client_clone_send_message = client.clone();
