@@ -1,4 +1,4 @@
-use dioxus::{logger::tracing::error, prelude::*};
+use dioxus::{logger::tracing::{error, info}, prelude::*};
 use dioxus_toast::{ToastFrame, ToastManager};
 use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
@@ -13,7 +13,7 @@ use whatssock_desktop::{
     authentication::auth::{create_hwid_key, decrypt_bytes},
     ApplicationContext, HttpClient, Route, COOKIE_SAVE_PATH,
 };
-use whatssock_lib::{client::UserInformation, UserSession};
+use whatssock_lib::{client::UserInformation, UserSession, WebSocketChatroomMessages};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
@@ -66,22 +66,25 @@ fn init_application() -> Element {
         }
     })));
 
-    let (websocket_sender, mut websocket_receiver) = channel::<()>(255);
+
+    let (websocket_sender, mut websocket_receiver) = channel::<WebSocketChatroomMessages>(255);
     let (remote_sender, remote_receiver) = mpsc::channel::<Message>(255);
 
     tokio::spawn(async move {
         let (ws_socket, response) = connect_async({
             #[cfg(debug_assertions)]
             {
-                String::from("ws://[::1]:3004")
+                String::from("ws://[::1]:3004/ws/chatroom")
             }
             #[cfg(not(debug_assertions))]
             {
-                String::from("ws://whatssock.com")
+                String::from("ws://whatssock.com/ws/chatroom")
             }
         })
         .await
         .unwrap();
+
+        info!("Successfully connected to the WebSocket.");
 
         let (mut write, mut read) = ws_socket.split();
 
@@ -93,7 +96,7 @@ fn init_application() -> Element {
                     match sendable_value {
                         Some(message) => {
                             // Handle sending out the message through the websocket
-                            write.send(todo!()).await.unwrap();
+                            write.send(Message::Binary(rmp_serde::to_vec(&message).unwrap().into())).await.unwrap();
                         },
                         None => {
                             error!("Websocket receiver handler channel closed. Websocket closed.");
@@ -108,7 +111,7 @@ fn init_application() -> Element {
                                 remote_sender.send(message).await.unwrap();
                             },
                             Err(err) => {
-
+                                error!("Error occured while reading a message from the WebSocket: {err}");
                             },
                         }
                     }

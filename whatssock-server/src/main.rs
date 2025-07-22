@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/chatroom_send_message",
             post(handle_incoming_chatroom_message),
         )
-        .route("/api/chatroom/ws", any(handler))
+        .route("/ws/chatroom", any(handler))
         .with_state(servere_state);
 
     let listener = TcpListener::bind("[::1]:3004").await?;

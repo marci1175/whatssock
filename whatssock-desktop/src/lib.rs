@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use reqwest::Client;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_tungstenite::tungstenite::Message;
+use whatssock_lib::WebSocketChatroomMessages;
 pub mod api_requests;
 pub mod authentication;
 pub mod ui;
@@ -59,6 +60,6 @@ pub type HttpWebClient = Arc<Mutex<HttpClient>>;
 #[derive(Clone)]
 pub struct ApplicationContext {
     pub http_client: HttpWebClient,
-    pub websocket_client_out: Sender<()>,
+    pub websocket_client_out: Sender<WebSocketChatroomMessages>,
     pub websocket_client_in: Arc<Mutex<Receiver<Message>>>,
 }

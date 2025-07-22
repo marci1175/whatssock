@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
 use whatssock_lib::{
     client::UserInformation, ChatMessage, CreateChatroomRequest, FetchChatroomResponse,
-    FetchKnownChatroomResponse, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
+    FetchKnownChatroomResponse, FetchKnownChatrooms, FetchUnknownChatroom, UserSession, WebSocketChatroomMessages,
 };
 
 use crate::{ApplicationContext, Route};
@@ -46,6 +46,8 @@ pub fn MainPage() -> Element {
                 .get(*selected_chatroom_node_idx.read())
                 .cloned()
         });
+
+    let chatroom_message_sender = application_ctx.websocket_client_out;
 
     // Request all the chatrooms of the IDs which were included in the useraccount
     use_hook(|| {
@@ -313,10 +315,11 @@ pub fn MainPage() -> Element {
                                             let user_session = user_session_clone_send_message.clone();
                                             let destination_id = chatroom_info.chatroom_uid;
                                             let msg_buffer = chatroom_message_buffer;
+                                            let chatroom_message_sender = chatroom_message_sender.clone();
                                             spawn(async move {
                                                 let client = client.lock();
-
-                                                let response = client.send_message(ChatMessage { user_session: (*user_session).clone(), destination_chatroom_id: destination_id, message: msg_buffer.read().clone() }).await.unwrap();
+                                                
+                                                chatroom_message_sender.send(WebSocketChatroomMessages::Message(msg_buffer.to_string())).await.unwrap();
                                             });
                                         },
 

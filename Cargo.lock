@@ -5821,6 +5821,7 @@ dependencies = [
  "log",
  "r2d2",
  "rand 0.9.1",
+ "rmp-serde",
  "serde",
  "tokio",
  "uuid",

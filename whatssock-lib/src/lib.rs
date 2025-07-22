@@ -51,3 +51,8 @@ pub struct ChatMessage {
     pub destination_chatroom_id: i32,
     pub message: String,
 }
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub enum WebSocketChatroomMessages {
+    Message(String),
+}
