@@ -15,4 +15,5 @@ pub struct RegisterRequest {
 pub struct UserInformation {
     pub username: String,
     pub chatrooms_joined: Vec<Option<i32>>,
+    pub user_id: i32,
 }

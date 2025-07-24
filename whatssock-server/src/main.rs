@@ -12,15 +12,13 @@ use diesel::{
 use dotenvy::dotenv;
 use tokio::net::TcpListener;
 use whatssock_server::{
-    ServerState,
     api::{
-        user_account_control::{
-            create_chatroom, fetch_known_chatrooms, fetch_login, fetch_session_token,
-            fetch_unknown_chatroom, handle_incoming_chatroom_message, handle_logout_request,
+        chatrooms::{create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, handle_incoming_chatroom_message}, user_account_control::{
+            fetch_login, fetch_session_token,
+            handle_logout_request,
             register_user,
-        },
-        websocket::handler,
-    },
+        }, websocket::handler
+    }, ServerState
 };
 
 #[tokio::main]

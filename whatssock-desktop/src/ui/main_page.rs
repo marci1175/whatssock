@@ -2,29 +2,44 @@ use std::sync::Arc;
 
 use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
+use parking_lot::Mutex;
+use tokio::{select, sync::mpsc::{Receiver, Sender}};
+use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
-    client::UserInformation, ChatMessage, CreateChatroomRequest, FetchChatroomResponse,
-    FetchKnownChatroomResponse, FetchKnownChatrooms, FetchUnknownChatroom, UserSession, WebSocketChatroomMessages,
+    client::UserInformation, FetchChatroomResponse,
+    FetchKnownChatroomResponse, UserSession,
+    WebSocketChatroomMessage, WebSocketChatroomMessages,
 };
 
-use crate::{ApplicationContext, Route};
+use crate::{
+    ApplicationContext, AuthHttpClient,
+    HttpClient, Route,
+};
 
 #[component]
 pub fn MainPage() -> Element {
-    let application_ctx = use_context::<ApplicationContext>();
-
+    let (websocket_sender, remote_receiver) = use_context::<(Sender<WebSocketChatroomMessage>, Arc<Mutex<Receiver<Message>>>)>();
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
+
+    let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
+
+    let application_ctx = use_root_context(|| ApplicationContext {
+        authed_http_client: AuthHttpClient::new(
+            http_client,
+            user_session.clone(),
+        ),
+        websocket_client_out: websocket_sender,
+        websocket_client_in: remote_receiver,
+    });
+
     let mut toast: Signal<ToastManager> = use_context();
 
     let user_session = Arc::new(user_session);
     let user_session_clone = user_session.clone();
-    let user_session_clone_create_chatroom = user_session.clone();
-    let user_session_clone_send_message = user_session.clone();
 
-    let client = application_ctx.http_client;
+    let client = application_ctx.authed_http_client;
     let client_clone = client.clone();
     let client_clone_add_chatroom = client.clone();
-    let client_clone_send_message = client.clone();
 
     let navigator = navigator();
     let mut user_chat_entries: Signal<Vec<FetchChatroomResponse>> = use_signal(Vec::new);
@@ -33,12 +48,11 @@ pub fn MainPage() -> Element {
     let mut new_chatroom_name_buffer = use_signal(String::new);
     let mut chatroom_passw_buffer = use_signal(String::new);
     let mut chatroom_message_buffer = use_signal(String::new);
-
+    let mut chatroom_messages: Signal<Vec<String>> = use_signal(Vec::new);
     let mut selected_chatroom_node_idx = use_signal(|| 0);
 
     let chatrooms_joined = user_information.chatrooms_joined;
     let client_chatroom_requester = client.clone();
-    let user_session_chatroom_req = user_session.clone();
     let currently_selected_chatroom_node: Memo<Option<FetchChatroomResponse>> =
         use_memo(move || {
             user_chat_entries
@@ -48,26 +62,43 @@ pub fn MainPage() -> Element {
         });
 
     let chatroom_message_sender = application_ctx.websocket_client_out;
+    let websocket_receiver = application_ctx.websocket_client_in;
+
+    use_hook(|| {
+        spawn(async move {
+            loop {
+                let mut websocket = websocket_receiver.lock();
+
+                select! {
+                    recv = websocket.recv() => {
+                        if let Some(received_bytes) = recv {
+                            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessage>(&received_bytes.into_data()).unwrap();
+
+                            match ws_msg.message {
+                                WebSocketChatroomMessages::Message(message) => {
+                                    chatroom_messages.push(message);
+                                },
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
 
     // Request all the chatrooms of the IDs which were included in the useraccount
     use_hook(|| {
         spawn(async move {
-            let client = client_chatroom_requester.lock();
+            let client = client_chatroom_requester.clone();
             let chatroom_ids: Vec<i32> = chatrooms_joined.iter().map(|id| id.unwrap()).collect();
 
-            let response = client
-                .fetch_known_chatrooms(FetchKnownChatrooms {
-                    user_session: (*user_session_chatroom_req).clone(),
-                    chatroom_uids: chatroom_ids,
-                })
-                .await
-                .unwrap();
+            let response = client.fetch_known_chatrooms(chatroom_ids).await.unwrap();
 
             let verified_chatrooms =
                 serde_json::from_str::<FetchKnownChatroomResponse>(&response.text().await.unwrap())
                     .unwrap();
 
-            user_chat_entries.extend(dbg!(verified_chatrooms.chatrooms));
+            user_chat_entries.extend(verified_chatrooms.chatrooms);
         });
     });
 
@@ -93,8 +124,6 @@ pub fn MainPage() -> Element {
                     for (idx, chatroom_node) in user_chat_entries.read().iter().enumerate() {
                         button {
                             id: {
-
-
                                 if idx == *selected_chatroom_node_idx.read() {
                                     "selected_chatroom_node"
                                 }
@@ -153,7 +182,7 @@ pub fn MainPage() -> Element {
 
                                 spawn(async move {
                                     // Send the logout request
-                                    client.lock().request_logout(user_session.clone()).await.unwrap();
+                                    client.request_logout().await.unwrap();
 
                                     // Reset root ctx for the session
                                     let mut session_ctx = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
@@ -189,7 +218,7 @@ pub fn MainPage() -> Element {
                                             let user_session = user_session_clone.clone();
 
                                             spawn(async move {
-                                                let response = client.lock().fetch_unknown_chatroom(FetchUnknownChatroom { user_session: (*user_session).clone(), chatroom_id: chatroom_id_buffer.to_string(), password: {
+                                                let response = client.fetch_unknown_chatroom(chatroom_id_buffer.to_string(), {
                                                     let passw_str = chatroom_passw_buffer.to_string();
 
                                                     if passw_str.is_empty() {
@@ -198,7 +227,7 @@ pub fn MainPage() -> Element {
                                                     else {
                                                         Some(passw_str)
                                                     }
-                                                } }).await.unwrap();
+                                                }).await.unwrap();
 
                                                 let serialized_response = serde_json::from_str::<FetchChatroomResponse>(&response.text().await.unwrap()).unwrap();
 
@@ -239,20 +268,23 @@ pub fn MainPage() -> Element {
                                     id: "chat_id_input_row",
                                     button {
                                         class: "button",
-                                        onclick: move |event| {
+                                        onclick: move |_| {
                                             let client = client_clone_add_chatroom.clone();
-                                            let user_session_clone_create_chatroom = user_session_clone_create_chatroom.clone();
 
                                             spawn(async move {
-                                                let response = client.lock().create_new_chatroom(CreateChatroomRequest { chatroom_name: new_chatroom_name_buffer.to_string(), chatroom_passw: {
-                                                    let entered_passw = chatroom_passw_buffer.to_string();
-                                                    if entered_passw.is_empty() {
-                                                        None
+                                                let response = client.create_new_chatroom(
+                                                    new_chatroom_name_buffer.to_string(),
+                                                    {
+                                                        let entered_passw = chatroom_passw_buffer.to_string();
+
+                                                        if entered_passw.is_empty() {
+                                                            None
+                                                        }
+                                                        else {
+                                                            Some(entered_passw)
+                                                        }
                                                     }
-                                                    else {
-                                                        Some(entered_passw)
-                                                    }
-                                                }, user_session: (*user_session_clone_create_chatroom).clone() }).await.unwrap();
+                                                ).await.unwrap();
 
                                                 let added_chatroom = serde_json::from_str::<FetchChatroomResponse>(&response.text().await.unwrap()).unwrap();
 
@@ -288,6 +320,18 @@ pub fn MainPage() -> Element {
             div {
                 class: "chatpanel",
 
+                div {
+                    id: "chats",
+
+                    for chatroom_msg in chatroom_messages.read().iter() {
+                        div {
+                            {
+                                chatroom_msg.to_string()
+                            }
+                        }
+                    }
+                }
+
                 // Bottompanel
                 // Hold the chat inputs such as emojis text, etc.
                 div {
@@ -311,15 +355,9 @@ pub fn MainPage() -> Element {
                                         class: "button",
                                         id: "send_message_button",
                                         onclick: move |_| {
-                                            let client = client_clone_send_message.clone();
-                                            let user_session = user_session_clone_send_message.clone();
-                                            let destination_id = chatroom_info.chatroom_uid;
-                                            let msg_buffer = chatroom_message_buffer;
                                             let chatroom_message_sender = chatroom_message_sender.clone();
                                             spawn(async move {
-                                                let client = client.lock();
-                                                
-                                                chatroom_message_sender.send(WebSocketChatroomMessages::Message(msg_buffer.to_string())).await.unwrap();
+                                                chatroom_message_sender.send(WebSocketChatroomMessage::new(user_information.user_id, None, chrono::Utc::now(), chatroom_info.chatroom_uid, WebSocketChatroomMessages::Message(chatroom_message_buffer.to_string()))).await.unwrap();
                                             });
                                         },
 

@@ -1,19 +1,18 @@
-use dioxus::{logger::tracing::{error, info}, prelude::*};
+use dioxus::{
+    logger::tracing::error,
+    prelude::*,
+};
 use dioxus_toast::{ToastFrame, ToastManager};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::StreamExt;
 use parking_lot::Mutex;
 use reqwest::Client;
 use std::{format, fs, path::PathBuf, sync::Arc};
-use tokio::{
-    select,
-    sync::mpsc::{self, channel},
-};
-use tokio_tungstenite::{connect_async, tungstenite::Message};
 use whatssock_desktop::{
-    authentication::auth::{create_hwid_key, decrypt_bytes},
-    ApplicationContext, HttpClient, Route, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{create_hwid_key, decrypt_bytes}, HttpClient, Route, COOKIE_SAVE_PATH
 };
-use whatssock_lib::{client::UserInformation, UserSession, WebSocketChatroomMessages};
+use whatssock_lib::{
+    client::UserInformation, UserSession,
+};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
@@ -66,68 +65,16 @@ fn init_application() -> Element {
         }
     })));
 
+    let server_sender_clone: Arc<parking_lot::lock_api::Mutex<parking_lot::RawMutex, HttpClient>> =
+        server_sender.clone();
 
-    let (websocket_sender, mut websocket_receiver) = channel::<WebSocketChatroomMessages>(255);
-    let (remote_sender, remote_receiver) = mpsc::channel::<Message>(255);
-
-    tokio::spawn(async move {
-        let (ws_socket, response) = connect_async({
-            #[cfg(debug_assertions)]
-            {
-                String::from("ws://[::1]:3004/ws/chatroom")
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                String::from("ws://whatssock.com/ws/chatroom")
-            }
-        })
-        .await
-        .unwrap();
-
-        info!("Successfully connected to the WebSocket.");
-
-        let (mut write, mut read) = ws_socket.split();
-
-        loop {
-            select! {
-                // This poll is going to wait until it receives a message from the client to send out a message.
-                // It uses a mpsc to receive the messages from various points of the code.
-                sendable_value = websocket_receiver.recv() => {
-                    match sendable_value {
-                        Some(message) => {
-                            // Handle sending out the message through the websocket
-                            write.send(Message::Binary(rmp_serde::to_vec(&message).unwrap().into())).await.unwrap();
-                        },
-                        None => {
-                            error!("Websocket receiver handler channel closed. Websocket closed.");
-                            break;
-                        },
-                    }
-                },
-                received_value = read.next() => {
-                    if let Some(message) = received_value {
-                        match message {
-                            Ok(message) => {
-                                remote_sender.send(message).await.unwrap();
-                            },
-                            Err(err) => {
-                                error!("Error occured while reading a message from the WebSocket: {err}");
-                            },
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    let server_sender_clone = server_sender.clone();
+    use_root_context(|| server_sender_clone);
     let mut log_res: Signal<Option<(UserSession, UserInformation)>> = use_signal(|| None);
-
     use_root_context::<Signal<Option<(UserSession, UserInformation)>>>(|| Signal::new(None));
-    use_root_context(|| ApplicationContext {
-        http_client: server_sender_clone,
-        websocket_client_out: websocket_sender,
-        websocket_client_in: Arc::new(Mutex::new(remote_receiver)),
+    use_root_context(|| {
+        let (sender, reciever) = init_websocket_connection();
+
+        (sender, Arc::new(Mutex::new(reciever)))
     });
 
     if let Ok(encrypted_bytes) = fs::read(&*COOKIE_SAVE_PATH) {
