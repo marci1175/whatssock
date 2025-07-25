@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono::NaiveDateTime;
 /// These structs contain all the types which are available for insertion in the db.
 /// lib.rs contains the types which are necessary for the REST API.
 use diesel::{

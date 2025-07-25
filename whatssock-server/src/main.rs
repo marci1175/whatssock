@@ -1,7 +1,9 @@
 use std::env;
 
 use axum::{
-    routing::{any, get, post}, serve, Router
+    Router,
+    routing::{any, get, post},
+    serve,
 };
 use diesel::{
     PgConnection,
@@ -10,15 +12,16 @@ use diesel::{
 use dotenvy::dotenv;
 use tokio::net::TcpListener;
 use whatssock_server::{
+    ServerState,
     api::{
         chatrooms::{
-            create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, fetch_user, handle_incoming_chatroom_message
+            create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, fetch_user,
         },
         user_account_control::{
             fetch_login, fetch_session_token, handle_logout_request, register_user,
         },
         websocket::handler,
-    }, ServerState
+    },
 };
 
 #[tokio::main]

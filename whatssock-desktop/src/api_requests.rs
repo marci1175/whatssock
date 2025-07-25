@@ -9,7 +9,7 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use whatssock_lib::{
-    client::{LoginRequest, RegisterRequest, WebSocketChatroomMessageClient},
+    client::{LoginRequest, RegisterRequest},
     server::WebSocketChatroomMessageServer,
     CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
 };

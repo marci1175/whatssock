@@ -52,8 +52,8 @@ pub fn MainPage() -> Element {
     let mut chatroom_messages: Signal<Vec<WebSocketChatroomMessageClient>> = use_signal(Vec::new);
     let mut selected_chatroom_node_idx = use_signal(|| 0);
 
-    let mut users_cache: Signal<HashMap<i32, UserLookup>> = use_signal(|| HashMap::new());
-    let mut users_cache_writer = users_cache.clone();
+    let users_cache: Signal<HashMap<i32, UserLookup>> = use_signal(HashMap::new);
+    let mut users_cache_writer = users_cache;
 
     let chatrooms_joined = user_information.chatrooms_joined;
     let client_chatroom_requester = client.clone();
@@ -76,7 +76,7 @@ pub fn MainPage() -> Element {
                 select! {
                     recv = websocket.recv() => {
                         if let Some(received_bytes) = recv {
-                            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessageClient>(&received_bytes.into_data().to_vec()).unwrap();
+                            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessageClient>(&received_bytes.into_data()).unwrap();
 
                             chatroom_messages.push(ws_msg);
                         }
@@ -336,7 +336,7 @@ pub fn MainPage() -> Element {
                                             let user_cache = users_cache.read();
                                             let client = client.clone();
 
-                                            let user_information_from_cache = user_cache.get(&message_owner_id).clone();
+                                            let user_information_from_cache = user_cache.get(&message_owner_id);
                                             match user_information_from_cache {
                                                 Some(user_information) => {
                                                     if message_owner_id == user_session.user_id {

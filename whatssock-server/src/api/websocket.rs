@@ -2,7 +2,6 @@ use axum::{
     extract::{State, WebSocketUpgrade, ws::WebSocket},
     response::Response,
 };
-use whatssock_lib::client::WebSocketChatroomMessageClient;
 use whatssock_lib::server::WebSocketChatroomMessageServer;
 
 use crate::{ServerState, api::chatrooms::handle_incoming_chatroom_message};

@@ -13,7 +13,7 @@ use reqwest::Client;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
-    client::WebSocketChatroomMessageClient, server::WebSocketChatroomMessageServer, UserSession,
+    server::WebSocketChatroomMessageServer, UserSession,
 };
 pub mod api_requests;
 pub mod authentication;

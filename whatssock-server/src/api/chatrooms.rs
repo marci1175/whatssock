@@ -2,10 +2,9 @@ use crate::api::chatrooms::users::dsl::users;
 use crate::api::user_account_control::verify_user_session;
 use crate::schema::messages::dsl::messages;
 
-use crate::models::{ChatroomEntry, MessageEntry, NewChatroom, NewMessage, UserAccountEntry};
+use crate::models::{ChatroomEntry, NewChatroom, NewMessage, UserAccountEntry};
 use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::chatrooms::{chatroom_id, chatroom_password};
-use crate::schema::user_signin_tokens::dsl::user_signin_tokens;
 use crate::schema::users::{chatrooms_joined, id};
 use crate::{
     ServerState,
@@ -13,7 +12,6 @@ use crate::{
 };
 use axum::{Json, extract::State, http::StatusCode};
 use chrono::Utc;
-use diesel::dsl::count_star;
 use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, insert_into};
 use log::error;
@@ -23,7 +21,7 @@ use whatssock_lib::client::WebSocketChatroomMessageClient;
 use whatssock_lib::server::WebSocketChatroomMessageServer;
 use whatssock_lib::{
     CreateChatroomRequest, FetchChatroomResponse, FetchKnownChatroomResponse, FetchKnownChatrooms,
-    FetchUnknownChatroom, UserLookup, UserSession,
+    FetchUnknownChatroom, UserLookup,
 };
 
 pub async fn fetch_unknown_chatroom(
@@ -252,7 +250,9 @@ pub async fn fetch_user(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    let uuid = uuid.parse::<i32>().map_err(|_| { StatusCode::METHOD_NOT_ALLOWED })?;
+    let uuid = uuid
+        .parse::<i32>()
+        .map_err(|_| StatusCode::METHOD_NOT_ALLOWED)?;
 
     let query = users
         .filter(id.eq(uuid))
@@ -266,5 +266,7 @@ pub async fn fetch_user(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(UserLookup { username: query.username }))
+    Ok(Json(UserLookup {
+        username: query.username,
+    }))
 }
