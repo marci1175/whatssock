@@ -1,9 +1,7 @@
 use std::env;
 
 use axum::{
-    Router,
-    routing::{any, post},
-    serve,
+    routing::{any, get, post}, serve, Router
 };
 use diesel::{
     PgConnection,
@@ -13,11 +11,13 @@ use dotenvy::dotenv;
 use tokio::net::TcpListener;
 use whatssock_server::{
     api::{
-        chatrooms::{create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, handle_incoming_chatroom_message}, user_account_control::{
-            fetch_login, fetch_session_token,
-            handle_logout_request,
-            register_user,
-        }, websocket::handler
+        chatrooms::{
+            create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, fetch_user, handle_incoming_chatroom_message
+        },
+        user_account_control::{
+            fetch_login, fetch_session_token, handle_logout_request, register_user,
+        },
+        websocket::handler,
     }, ServerState
 };
 
@@ -40,10 +40,7 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/request_known_chatroom", post(fetch_known_chatrooms))
         .route("/api/chatroom_new", post(create_chatroom))
-        .route(
-            "/api/chatroom_send_message",
-            post(handle_incoming_chatroom_message),
-        )
+        .route("/api/fetch_user", get(fetch_user))
         .route("/ws/chatroom", any(handler))
         .with_state(servere_state);
 

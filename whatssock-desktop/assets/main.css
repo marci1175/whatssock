@@ -305,6 +305,10 @@ input:hover, .button:hover {
   display: block;
 }
 
+#chats {
+  overflow: overlay;
+}
+
 #chat_input {
   flex: 1;
   height: auto;
@@ -323,4 +327,22 @@ input:hover, .button:hover {
   box-shadow: 0px 0px 0px 0px rgba(149, 149, 149, 0.2);
   text-shadow: 0px 0px 0px 0px rgba(149, 149, 149, 0.2);
   animation-name: none;
+}
+
+#message_node {
+  border: white 1px solid;
+  border-radius: 10px;
+  margin: 5px 5px 5px 5px;
+  padding: 10px 10px 10px 10px;
+}
+
+#message_author {
+  color: #ffffff;
+  font-size: small;
+}
+
+#message_date {
+  color: #ffffff;
+  direction: rtl;
+  font-size: small;
 }

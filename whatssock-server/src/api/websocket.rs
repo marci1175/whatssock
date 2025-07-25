@@ -1,16 +1,17 @@
 use axum::{
-    extract::{ws::WebSocket, State, WebSocketUpgrade},
+    extract::{State, WebSocketUpgrade, ws::WebSocket},
     response::Response,
 };
-use whatssock_lib::{WebSocketChatroomMessage, WebSocketChatroomMessages};
+use whatssock_lib::client::WebSocketChatroomMessageClient;
+use whatssock_lib::server::WebSocketChatroomMessageServer;
 
-use crate::ServerState;
+use crate::{ServerState, api::chatrooms::handle_incoming_chatroom_message};
 
 pub async fn handler(state: State<ServerState>, ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(|socket| handle_socket(state, socket))
 }
 
-pub async fn handle_socket(State(state): State<ServerState>, mut socket: WebSocket) {
+pub async fn handle_socket(state: State<ServerState>, mut socket: WebSocket) {
     while let Some(msg) = socket.recv().await {
         let msg_bytes = if let Ok(msg) = msg {
             // All of the messages we send over are in data format
@@ -19,23 +20,22 @@ pub async fn handle_socket(State(state): State<ServerState>, mut socket: WebSock
             let msg_bytes = msg.into_data();
 
             // We can safely unwrap here
-            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessage>(&msg_bytes).unwrap();
+            let ws_msg =
+                rmp_serde::from_slice::<WebSocketChatroomMessageServer>(&msg_bytes).unwrap();
 
             // Handle the incoming message
-            match ws_msg.message {
-                WebSocketChatroomMessages::Message(message) => {
-                    dbg!(message);
-                }
-            }
+            let relayed_message = handle_incoming_chatroom_message(&state, ws_msg)
+                .await
+                .unwrap();
 
-            msg_bytes
+            rmp_serde::to_vec(&relayed_message).unwrap()
         } else {
             // client disconnected
             return;
         };
 
         if socket
-            .send(axum::extract::ws::Message::Binary(msg_bytes))
+            .send(axum::extract::ws::Message::Binary(msg_bytes.into()))
             .await
             .is_err()
         {

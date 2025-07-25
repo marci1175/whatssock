@@ -1,33 +1,34 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
 use parking_lot::Mutex;
-use tokio::{select, sync::mpsc::{Receiver, Sender}};
+use tokio::{
+    select,
+    sync::mpsc::{Receiver, Sender},
+};
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
-    client::UserInformation, FetchChatroomResponse,
-    FetchKnownChatroomResponse, UserSession,
-    WebSocketChatroomMessage, WebSocketChatroomMessages,
+    client::{UserInformation, WebSocketChatroomMessageClient},
+    server::WebSocketChatroomMessageServer,
+    FetchChatroomResponse, FetchKnownChatroomResponse, UserLookup, UserSession,
+    WebSocketChatroomMessages,
 };
 
-use crate::{
-    ApplicationContext, AuthHttpClient,
-    HttpClient, Route,
-};
+use crate::{ApplicationContext, AuthHttpClient, HttpClient, Route};
 
 #[component]
 pub fn MainPage() -> Element {
-    let (websocket_sender, remote_receiver) = use_context::<(Sender<WebSocketChatroomMessage>, Arc<Mutex<Receiver<Message>>>)>();
+    let (websocket_sender, remote_receiver) = use_context::<(
+        Sender<WebSocketChatroomMessageServer>,
+        Arc<Mutex<Receiver<Message>>>,
+    )>();
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
 
     let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
 
     let application_ctx = use_root_context(|| ApplicationContext {
-        authed_http_client: AuthHttpClient::new(
-            http_client,
-            user_session.clone(),
-        ),
+        authed_http_client: AuthHttpClient::new(http_client, user_session.clone()),
         websocket_client_out: websocket_sender,
         websocket_client_in: remote_receiver,
     });
@@ -48,8 +49,11 @@ pub fn MainPage() -> Element {
     let mut new_chatroom_name_buffer = use_signal(String::new);
     let mut chatroom_passw_buffer = use_signal(String::new);
     let mut chatroom_message_buffer = use_signal(String::new);
-    let mut chatroom_messages: Signal<Vec<String>> = use_signal(Vec::new);
+    let mut chatroom_messages: Signal<Vec<WebSocketChatroomMessageClient>> = use_signal(Vec::new);
     let mut selected_chatroom_node_idx = use_signal(|| 0);
+
+    let mut users_cache: Signal<HashMap<i32, UserLookup>> = use_signal(|| HashMap::new());
+    let mut users_cache_writer = users_cache.clone();
 
     let chatrooms_joined = user_information.chatrooms_joined;
     let client_chatroom_requester = client.clone();
@@ -72,13 +76,9 @@ pub fn MainPage() -> Element {
                 select! {
                     recv = websocket.recv() => {
                         if let Some(received_bytes) = recv {
-                            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessage>(&received_bytes.into_data()).unwrap();
+                            let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessageClient>(&received_bytes.into_data().to_vec()).unwrap();
 
-                            match ws_msg.message {
-                                WebSocketChatroomMessages::Message(message) => {
-                                    chatroom_messages.push(message);
-                                },
-                            }
+                            chatroom_messages.push(ws_msg);
                         }
                     }
                 }
@@ -178,7 +178,6 @@ pub fn MainPage() -> Element {
                             id: "user_control_panel_button",
                             onclick: move |_event| {
                                 let client = client.clone();
-                                let user_session = user_session.clone();
 
                                 spawn(async move {
                                     // Send the logout request
@@ -215,8 +214,6 @@ pub fn MainPage() -> Element {
                                         class: "button",
                                         onclick: move |_| {
                                             let client = client_clone.clone();
-                                            let user_session = user_session_clone.clone();
-
                                             spawn(async move {
                                                 let response = client.fetch_unknown_chatroom(chatroom_id_buffer.to_string(), {
                                                     let passw_str = chatroom_passw_buffer.to_string();
@@ -325,8 +322,79 @@ pub fn MainPage() -> Element {
 
                     for chatroom_msg in chatroom_messages.read().iter() {
                         div {
+                            id: "message_node",
+
+                            // Display who sent the message
                             {
-                                chatroom_msg.to_string()
+                                rsx!(
+                                    div {
+                                        id: "message_author",
+
+                                        {
+                                            let message_owner_id = chatroom_msg.message_owner_id;
+
+                                            let user_cache = users_cache.read();
+                                            let client = client.clone();
+
+                                            let user_information_from_cache = user_cache.get(&message_owner_id).clone();
+                                            match user_information_from_cache {
+                                                Some(user_information) => {
+                                                    if message_owner_id == user_session.user_id {
+                                                        String::from("Me")
+                                                    }
+                                                    else {
+                                                        user_information.username.clone()
+                                                    }
+                                                },
+                                                None => {
+                                                    // Fetch user information from server
+                                                    // We will redraw once we have the account
+                                                    spawn(async move {
+                                                        let lookup_response = client.fetch_user_information(message_owner_id).await.unwrap();
+
+                                                        let lookup = serde_json::from_str::<UserLookup>(&lookup_response.text().await.unwrap()).unwrap();
+
+                                                        users_cache_writer.write().insert(message_owner_id, lookup);
+                                                    });
+
+                                                    // Display loading title
+                                                    String::from("loading...")
+                                                },
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+
+                            // Display the message itself
+                            {
+                                rsx!(
+                                    div {
+                                        id: "message_content",
+                                        match &chatroom_msg.message {
+                                            WebSocketChatroomMessages::StringMessage(message) => {
+                                                rsx!(
+                                                    div {
+                                                        id: "string_message",
+
+                                                        { message.to_string() }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+
+                            // Display the date it was sent
+                            {
+                                rsx!(
+                                    div {
+                                        id: "message_date",
+
+                                        { chatroom_msg.date_issued.to_string() }
+                                    }
+                                )
                             }
                         }
                     }
@@ -355,9 +423,10 @@ pub fn MainPage() -> Element {
                                         class: "button",
                                         id: "send_message_button",
                                         onclick: move |_| {
+                                            let user_session = (*user_session).clone();
                                             let chatroom_message_sender = chatroom_message_sender.clone();
                                             spawn(async move {
-                                                chatroom_message_sender.send(WebSocketChatroomMessage::new(user_information.user_id, None, chrono::Utc::now(), chatroom_info.chatroom_uid, WebSocketChatroomMessages::Message(chatroom_message_buffer.to_string()))).await.unwrap();
+                                                chatroom_message_sender.send(WebSocketChatroomMessageServer::new(user_session, None, chatroom_info.chatroom_uid, WebSocketChatroomMessages::StringMessage(chatroom_message_buffer.to_string()),  chrono::Utc::now().naive_local())).await.unwrap();
                                             });
                                         },
 

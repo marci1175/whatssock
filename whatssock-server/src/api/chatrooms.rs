@@ -1,7 +1,8 @@
 use crate::api::chatrooms::users::dsl::users;
-use crate::models::{
-    ChatroomEntry, NewChatroom, UserAccountEntry,
-};
+use crate::api::user_account_control::verify_user_session;
+use crate::schema::messages::dsl::messages;
+
+use crate::models::{ChatroomEntry, MessageEntry, NewChatroom, NewMessage, UserAccountEntry};
 use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::chatrooms::{chatroom_id, chatroom_password};
 use crate::schema::user_signin_tokens::dsl::user_signin_tokens;
@@ -11,17 +12,19 @@ use crate::{
     schema::{self, *},
 };
 use axum::{Json, extract::State, http::StatusCode};
+use chrono::Utc;
 use diesel::dsl::count_star;
 use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
-use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper};
+use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, insert_into};
 use log::error;
-use rand::distr::Uniform;
 use rand::Rng;
+use rand::distr::Uniform;
+use whatssock_lib::client::WebSocketChatroomMessageClient;
+use whatssock_lib::server::WebSocketChatroomMessageServer;
 use whatssock_lib::{
-    ChatMessage, CreateChatroomRequest, FetchChatroomResponse, FetchKnownChatroomResponse,
-    FetchKnownChatrooms, FetchUnknownChatroom,
+    CreateChatroomRequest, FetchChatroomResponse, FetchKnownChatroomResponse, FetchKnownChatrooms,
+    FetchUnknownChatroom, UserLookup, UserSession,
 };
-
 
 pub async fn fetch_unknown_chatroom(
     State(state): State<ServerState>,
@@ -86,26 +89,7 @@ pub async fn fetch_known_chatrooms(
     })?;
 
     // Verify user session validness
-    let matching_user_tokens = user_signin_tokens
-        .filter(schema::user_signin_tokens::user_id.eq(bulk_chatrooms_request.user_session.user_id))
-        .filter(
-            schema::user_signin_tokens::session_token
-                .eq(bulk_chatrooms_request.user_session.session_token),
-        )
-        .select(count_star())
-        .get_result::<i64>(&mut pg_connection)
-        .map_err(|err| {
-            error!(
-                "An error occured while verifying login information from db: {}",
-                err
-            );
-
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-
-    if matching_user_tokens != 1 {
-        return Err(StatusCode::FORBIDDEN);
-    }
+    verify_user_session(&bulk_chatrooms_request.user_session, &mut pg_connection)?;
 
     let mut verified_chatrooms_reponses: Vec<FetchChatroomResponse> = Vec::new();
 
@@ -217,11 +201,11 @@ pub async fn create_chatroom(
 }
 
 pub async fn handle_incoming_chatroom_message(
-    State(state): State<ServerState>,
-    Json(chatroom_request): Json<ChatMessage>,
-) -> Result<(), StatusCode> {
+    State(state): &State<ServerState>,
+    chatroom_request: WebSocketChatroomMessageServer,
+) -> Result<WebSocketChatroomMessageClient, StatusCode> {
     // Get a db connection from the pool
-    let pg_connection = state.pg_pool.get().map_err(|err| {
+    let mut pg_connection = state.pg_pool.get().map_err(|err| {
         error!(
             "An error occured while fetching login information from db: {}",
             err
@@ -230,5 +214,57 @@ pub async fn handle_incoming_chatroom_message(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    Ok(())
+    verify_user_session(&chatroom_request.message_owner_session, &mut pg_connection)?;
+
+    insert_into(messages)
+        .values(NewMessage {
+            parent_chatroom_id: chatroom_request.sent_to,
+            owner_user_id: chatroom_request.message_owner_session.user_id,
+            send_date: Utc::now().naive_utc(),
+            raw_message: rmp_serde::to_vec(&chatroom_request.message).unwrap(),
+        })
+        .execute(&mut pg_connection)
+        .map_err(|err| {
+            error!("An error occured while processing message: {}", err);
+
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(WebSocketChatroomMessageClient {
+        message_owner_id: chatroom_request.message_owner_session.user_id,
+        replying_to_msg_id: chatroom_request.replying_to_msg_id,
+        sent_to: chatroom_request.sent_to,
+        message: chatroom_request.message,
+        date_issued: chatroom_request.date_issued,
+    })
+}
+
+pub async fn fetch_user(
+    State(state): State<ServerState>,
+    uuid: String,
+) -> Result<Json<UserLookup>, StatusCode> {
+    let mut pg_connection = state.pg_pool.get().map_err(|err| {
+        error!(
+            "An error occured while fetching login information from db: {}",
+            err
+        );
+
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    let uuid = uuid.parse::<i32>().map_err(|_| { StatusCode::METHOD_NOT_ALLOWED })?;
+
+    let query = users
+        .filter(id.eq(uuid))
+        .first::<UserAccountEntry>(&mut pg_connection)
+        .map_err(|err| {
+            error!(
+                "An error occured while fetching user information from db: {}",
+                err
+            );
+
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(Json(UserLookup { username: query.username }))
 }

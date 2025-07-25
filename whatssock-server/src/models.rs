@@ -1,3 +1,4 @@
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 /// These structs contain all the types which are available for insertion in the db.
 /// lib.rs contains the types which are necessary for the REST API.
 use diesel::{
@@ -67,4 +68,25 @@ pub struct NewChatroom {
     pub participants: Vec<i32>,
     pub is_direct_message: bool,
     pub last_message_id: Option<i32>,
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = crate::schema::messages)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct NewMessage {
+    pub parent_chatroom_id: i32,
+    pub owner_user_id: i32,
+    pub send_date: NaiveDateTime,
+    pub raw_message: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Selectable, QueryableByName, Queryable)]
+#[diesel(table_name = crate::schema::messages)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct MessageEntry {
+    pub id: i32,
+    pub parent_chatroom_id: i32,
+    pub owner_user_id: i32,
+    pub send_date: NaiveDateTime,
+    pub raw_message: Vec<u8>,
 }

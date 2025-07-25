@@ -1,7 +1,8 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    authentication::auth::{deserialize_into_user_session, store_user_session_on_disk}, HttpClient, Route, COOKIE_SAVE_PATH,
+    authentication::auth::{deserialize_into_user_session, store_user_session_on_disk},
+    HttpClient, Route, COOKIE_SAVE_PATH,
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;

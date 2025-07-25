@@ -1,13 +1,11 @@
 use crate::api::user_account_control::users::dsl::users;
-use crate::models::{
-    NewUserAccount, NewUserSession, UserAccountEntry, UserSessionEntry,
-};
+use crate::models::{NewUserAccount, NewUserSession, UserAccountEntry, UserSessionEntry};
 use crate::schema::user_signin_tokens::dsl::user_signin_tokens;
 use crate::schema::user_signin_tokens::{session_token, user_id};
 use crate::schema::users::{id, passw, username};
 use crate::{
     ServerState,
-    schema::{*},
+    schema::{self, *},
 };
 use axum::{Json, extract::State, http::StatusCode};
 use diesel::dsl::count_star;
@@ -15,9 +13,9 @@ use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
 use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, delete};
 use log::error;
 use rand::{Rng, rng};
+use whatssock_lib::UserSession;
 use whatssock_lib::client::{LoginRequest, RegisterRequest, UserInformation};
 use whatssock_lib::server::{LoginResponse, LogoutResponse};
-use whatssock_lib::UserSession;
 
 pub async fn fetch_login(
     State(state): State<ServerState>,
@@ -117,6 +115,7 @@ pub async fn register_user(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Check if there are existing users with this name.
     let user_count = users
         .filter(username.eq(information.username.clone()))
         .select(count_star())
@@ -177,7 +176,7 @@ pub async fn register_user(
 
 pub async fn fetch_session_token(
     State(state): State<ServerState>,
-    Json(session_cookie): Json<UserSession>,
+    Json(user_session): Json<UserSession>,
 ) -> Result<Json<UserInformation>, StatusCode> {
     // Get a db connection from the pool
     let mut pg_connection = state.pg_pool.get().map_err(|err| {
@@ -189,27 +188,11 @@ pub async fn fetch_session_token(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Get how many fields are equal (This must be one, or zero.)
-    let count = user_signin_tokens
-        .filter(user_id.eq(session_cookie.user_id))
-        .filter(session_token.eq(session_cookie.session_token))
-        .select(count_star())
-        .first::<i64>(&mut pg_connection)
-        .map_err(|err| {
-            error!(
-                "An error occured while fetching user session information from db: {}",
-                err
-            );
-            StatusCode::REQUEST_TIMEOUT
-        })?;
-
-    // If the user token is not found return an error indication that it is false.
-    if count != 1 {
-        return Err(StatusCode::NOT_ACCEPTABLE);
-    }
+    // Verify user session, this will return an error if the session is not found in the DB.
+    verify_user_session(&user_session, &mut pg_connection)?;
 
     let user_account = users
-        .filter(id.eq(session_cookie.user_id))
+        .filter(id.eq(user_session.user_id))
         .select(UserAccountEntry::as_select())
         .first::<UserAccountEntry>(&mut pg_connection)
         .map_err(|err| {
@@ -265,4 +248,35 @@ pub fn generate_session_token() -> [u8; 32] {
     rng.fill(&mut custom_identifier);
 
     custom_identifier
+}
+
+/// Checks the [`UserSession`] passed in.
+/// The function checks for the session token and the id. If either one of them dont match, it will return [`StatusCode::FORBIDDEN`].
+pub fn verify_user_session(
+    // The UserSession which is checked
+    user_session: &UserSession,
+    // A valid DB connection
+    pg_connection: &mut r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    >,
+) -> Result<(), StatusCode> {
+    let matching_user_tokens = user_signin_tokens
+        .filter(schema::user_signin_tokens::user_id.eq(user_session.user_id))
+        .filter(schema::user_signin_tokens::session_token.eq(user_session.session_token))
+        .select(count_star())
+        .get_result::<i64>(pg_connection)
+        .map_err(|err| {
+            error!(
+                "An error occured while verifying login information from db: {}",
+                err
+            );
+
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if matching_user_tokens != 1 {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    Ok(())
 }

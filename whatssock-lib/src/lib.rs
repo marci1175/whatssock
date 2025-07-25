@@ -1,7 +1,7 @@
 pub mod client;
 pub mod server;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
@@ -47,48 +47,11 @@ pub struct CreateChatroomRequest {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct ChatMessage {
-    pub user_session: UserSession,
-    pub destination_chatroom_id: i32,
-    pub message: String,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub enum WebSocketChatroomMessages {
-    Message(String),
+    StringMessage(String),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct MessageOwner {}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct WebSocketChatroomMessage {
-    // The userid of the sender of this message.
-    pub message_owner: i32,
-    // The message's id this message was replying to.
-    pub replying_to_msg_id: Option<i32>,
-    // The date this message was sent at.
-    pub sent_at: DateTime<Utc>,
-    // The ID of the chatroom this message has been sent to.
-    pub sent_to: i32,
-    // The message itself.
-    pub message: WebSocketChatroomMessages,
-}
-
-impl WebSocketChatroomMessage {
-    pub fn new(
-        message_owner: i32,
-        replying_to_msg_id: Option<i32>,
-        sent_at: DateTime<Utc>,
-        sent_to: i32,
-        message: WebSocketChatroomMessages,
-    ) -> Self {
-        Self {
-            message_owner,
-            replying_to_msg_id,
-            sent_at,
-            sent_to,
-            message,
-        }
-    }
+pub struct UserLookup {
+    pub username: String,
 }

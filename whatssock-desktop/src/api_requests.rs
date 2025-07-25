@@ -1,4 +1,3 @@
-
 use crate::{AuthHttpClient, HttpClient};
 use anyhow::ensure;
 use dioxus::logger::tracing::{error, info};
@@ -10,9 +9,9 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use whatssock_lib::{
-    client::{LoginRequest, RegisterRequest},
-    ChatMessage, CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
-    WebSocketChatroomMessage,
+    client::{LoginRequest, RegisterRequest, WebSocketChatroomMessageClient},
+    server::WebSocketChatroomMessageServer,
+    CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
 };
 
 impl HttpClient {
@@ -175,23 +174,12 @@ impl AuthHttpClient {
         Ok(response)
     }
 
-    pub async fn send_message(
-        &self,
-        destination_chatroom_id: i32,
-        message: String,
-    ) -> anyhow::Result<Response> {
+    pub async fn fetch_user_information(&self, user_id: i32) -> anyhow::Result<Response> {
         let response = self
             .client
-            .post(format!(
-                "{}/api/chatroom_send_message",
-                self.client.base_url
-            ))
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&ChatMessage {
-                user_session: self.user_session.clone(),
-                destination_chatroom_id,
-                message,
-            })?)
+            .get(format!("{}/api/fetch_user", self.client.base_url))
+            .header("Content-Type", "text/plain")
+            .body(user_id.to_string())
             .send()
             .await?;
 
@@ -203,9 +191,8 @@ impl AuthHttpClient {
     }
 }
 
-pub fn init_websocket_connection(
-) -> (Sender<WebSocketChatroomMessage>, Receiver<Message>) {
-    let (websocket_sender, mut websocket_receiver) = channel::<WebSocketChatroomMessage>(255);
+pub fn init_websocket_connection() -> (Sender<WebSocketChatroomMessageServer>, Receiver<Message>) {
+    let (websocket_sender, mut websocket_receiver) = channel::<WebSocketChatroomMessageServer>(255);
     let (remote_sender, remote_receiver) = channel::<Message>(255);
 
     tokio::spawn(async move {
