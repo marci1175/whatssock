@@ -4,7 +4,7 @@ use crate::schema::messages::dsl::messages;
 
 use crate::models::{ChatroomEntry, NewChatroom, NewMessage, UserAccountEntry};
 use crate::schema::chatrooms::dsl::chatrooms;
-use crate::schema::chatrooms::{chatroom_id, chatroom_password};
+use crate::schema::chatrooms::{chatroom_id, chatroom_password, participants};
 use crate::schema::users::{chatrooms_joined, id};
 use crate::{
     ServerState,
@@ -40,8 +40,10 @@ pub async fn fetch_unknown_chatroom(
 
     let chatrooms_filter = chatrooms.filter(chatroom_id.eq(chatroom_request.chatroom_id));
 
-    let query_result: ChatroomEntry = if let Some(password) = chatroom_request.password {
-        let password_filter = chatrooms_filter.filter(chatroom_password.eq(password));
+    let mut query_result: ChatroomEntry = if let Some(password) = chatroom_request.password {
+        let password_filter = chatrooms_filter
+            .clone()
+            .filter(chatroom_password.eq(password));
 
         password_filter
             .select(ChatroomEntry::as_select())
@@ -49,18 +51,37 @@ pub async fn fetch_unknown_chatroom(
             .map_err(|err| {
                 error!("An error occured while fetching chatrooms from db: {}", err);
 
-                StatusCode::INTERNAL_SERVER_ERROR
+                StatusCode::NOT_FOUND
             })?
     } else {
         chatrooms_filter
+            .clone()
             .select(ChatroomEntry::as_select())
             .first(&mut pg_connection)
             .map_err(|err| {
                 error!("An error occured while fetching chatrooms from db: {}", err);
 
-                StatusCode::INTERNAL_SERVER_ERROR
+                StatusCode::NOT_FOUND
             })?
     };
+
+    // Update the participants list
+    query_result
+        .participants
+        .push(Some(chatroom_request.user_session.user_id));
+
+    // Add the user to the chatroom's participant list
+    diesel::update(chatrooms_filter)
+        .set(participants.eq(query_result.participants.clone()))
+        .execute(&mut pg_connection)
+        .map_err(|err| {
+            error!(
+                "An error occured while updating chatroom entry from db: {}",
+                err
+            );
+
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
 
     Ok(Json(FetchChatroomResponse {
         chatroom_uid: query_result.id,

@@ -5841,6 +5841,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "tokio",
+ "tokio-util",
  "uuid",
  "whatssock-lib",
 ]

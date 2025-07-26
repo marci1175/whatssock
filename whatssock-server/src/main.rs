@@ -67,7 +67,7 @@ pub fn establish_state() -> anyhow::Result<ServerState> {
 
     Ok(ServerState {
         pg_pool,
-        connected_users_websockets: (),
+        chatroom_subscriptions: Arc::new(DashMap::new()),
         currently_online_chatrooms: Arc::new(DashMap::new()),
     })
 }

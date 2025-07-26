@@ -15,7 +15,9 @@ use whatssock_lib::{
     WebSocketChatroomMessages,
 };
 
-use crate::{api_requests::init_websocket_connection, ApplicationContext, AuthHttpClient, HttpClient, Route};
+use crate::{
+    api_requests::init_websocket_connection, ApplicationContext, AuthHttpClient, HttpClient, Route,
+};
 
 #[component]
 pub fn MainPage() -> Element {
@@ -38,8 +40,6 @@ pub fn MainPage() -> Element {
     let mut toast: Signal<ToastManager> = use_context();
 
     let user_session = Arc::new(user_session);
-    let user_session_clone = user_session.clone();
-
     let client = application_ctx.authed_http_client;
     let client_clone = client.clone();
     let client_clone_add_chatroom = client.clone();
