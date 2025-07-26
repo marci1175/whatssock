@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::{AuthHttpClient, HttpClient};
 use anyhow::ensure;
 use dioxus::logger::tracing::{error, info};
@@ -191,53 +193,74 @@ impl AuthHttpClient {
     }
 }
 
-pub fn init_websocket_connection() -> (Sender<WebSocketChatroomMessageServer>, Receiver<Message>) {
+pub fn init_websocket_connection(
+    user_session: UserSession,
+) -> (Sender<WebSocketChatroomMessageServer>, Receiver<Message>) {
     let (websocket_sender, mut websocket_receiver) = channel::<WebSocketChatroomMessageServer>(255);
     let (remote_sender, remote_receiver) = channel::<Message>(255);
 
     tokio::spawn(async move {
-        let (ws_socket, response) = connect_async({
-            #[cfg(debug_assertions)]
-            {
-                String::from("ws://[::1]:3004/ws/chatroom")
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                String::from("ws://whatssock.com/ws/chatroom")
-            }
-        })
-        .await
-        .unwrap();
-
-        info!("Successfully connected to the WebSocket.");
-
-        let (mut write, mut read) = ws_socket.split();
-
         loop {
-            select! {
-                // This poll is going to wait until it receives a message from the client to send out a message.
-                // It uses a mpsc to receive the messages from various points of the code.
-                sendable_value = websocket_receiver.recv() => {
-                    match sendable_value {
-                        Some(message) => {
-                            // Handle sending out the message through the websocket
-                            write.send(Message::Binary(rmp_serde::to_vec(&message).unwrap().into())).await.unwrap();
-                        },
-                        None => {
-                            error!("Websocket receiver handler channel closed. Websocket closed.");
-                            break;
-                        },
-                    }
-                },
-                received_value = read.next() => {
-                    if let Some(message) = received_value {
-                        match message {
-                            Ok(message) => {
-                                remote_sender.send(message).await.unwrap();
+            let (ws_socket, response) = match connect_async({
+                #[cfg(debug_assertions)]
+                {
+                    String::from("ws://[::1]:3004/ws/chatroom")
+                }
+                #[cfg(not(debug_assertions))]
+                {
+                    String::from("ws://whatssock.com/ws/chatroom")
+                }
+            })
+            .await
+            {
+                Ok(connection) => connection,
+                Err(err) => {
+                    error!("Error occured when establishing WebSocket connection: {err}. Retrying in 10s.....");
+
+                    tokio::time::sleep(Duration::from_secs(10)).await;
+
+                    continue;
+                }
+            };
+
+            info!("Successfully connected to the WebSocket.");
+
+            let (mut write, mut read) = ws_socket.split();
+
+            // Send the first authentication message
+            write
+                .send(Message::Binary(
+                    rmp_serde::to_vec(&user_session).unwrap().into(),
+                ))
+                .await
+                .unwrap();
+
+            loop {
+                select! {
+                    // This poll is going to wait until it receives a message from the client to send out a message.
+                    // It uses a mpsc to receive the messages from various points of the code.
+                    sendable_value = websocket_receiver.recv() => {
+                        match sendable_value {
+                            Some(message) => {
+                                // Handle sending out the message through the websocket
+                                write.send(Message::Binary(rmp_serde::to_vec(&message).unwrap().into())).await.unwrap();
                             },
-                            Err(err) => {
-                                error!("Error occured while reading a message from the WebSocket: {err}");
+                            None => {
+                                error!("Websocket receiver handler channel closed. Websocket closed.");
+                                break;
                             },
+                        }
+                    },
+                    received_value = read.next() => {
+                        if let Some(message) = received_value {
+                            match message {
+                                Ok(message) => {
+                                    remote_sender.send(message).await.unwrap();
+                                },
+                                Err(err) => {
+                                    error!("Error occured while reading a message from the WebSocket: {err}");
+                                },
+                            }
                         }
                     }
                 }

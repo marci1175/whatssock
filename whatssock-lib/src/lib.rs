@@ -32,7 +32,7 @@ pub struct FetchChatroomResponse {
     pub chatroom_uid: i32,
     pub chatroom_id: String,
     pub chatroom_name: String,
-    /// The reason it is an option is because this is what diesel returns
+    /// The reason it is an option is because this is what diesel hehe
     pub participants: Vec<Option<i32>>,
     pub is_direct_message: bool,
     pub last_message_id: Option<i32>,

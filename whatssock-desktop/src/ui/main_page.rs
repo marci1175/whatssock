@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use dioxus::prelude::*;
+use dioxus::{logger::tracing::event, prelude::*, web};
 use dioxus_toast::{ToastInfo, ToastManager};
 use parking_lot::Mutex;
 use tokio::{
@@ -15,15 +15,17 @@ use whatssock_lib::{
     WebSocketChatroomMessages,
 };
 
-use crate::{ApplicationContext, AuthHttpClient, HttpClient, Route};
+use crate::{api_requests::init_websocket_connection, ApplicationContext, AuthHttpClient, HttpClient, Route};
 
 #[component]
 pub fn MainPage() -> Element {
-    let (websocket_sender, remote_receiver) = use_context::<(
-        Sender<WebSocketChatroomMessageServer>,
-        Arc<Mutex<Receiver<Message>>>,
-    )>();
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
+
+    let (websocket_sender, remote_receiver) = use_root_context(|| {
+        let (sender, reciever) = init_websocket_connection(user_session.clone());
+
+        (sender, Arc::new(Mutex::new(reciever)))
+    });
 
     let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
 
@@ -319,6 +321,9 @@ pub fn MainPage() -> Element {
 
                 div {
                     id: "chats",
+                    onscroll: move |event| {
+
+                    },
 
                     for chatroom_msg in chatroom_messages.read().iter() {
                         div {
@@ -329,6 +334,10 @@ pub fn MainPage() -> Element {
                                 rsx!(
                                     div {
                                         id: "message_author",
+
+                                        title: {
+                                            format!("User ID: {}", chatroom_msg.message_owner_id)
+                                        },
 
                                         {
                                             let message_owner_id = chatroom_msg.message_owner_id;
@@ -425,9 +434,14 @@ pub fn MainPage() -> Element {
                                         onclick: move |_| {
                                             let user_session = (*user_session).clone();
                                             let chatroom_message_sender = chatroom_message_sender.clone();
-                                            spawn(async move {
-                                                chatroom_message_sender.send(WebSocketChatroomMessageServer::new(user_session, None, chatroom_info.chatroom_uid, WebSocketChatroomMessages::StringMessage(chatroom_message_buffer.to_string()),  chrono::Utc::now().naive_local())).await.unwrap();
-                                            });
+                                            let message = chatroom_message_buffer.to_string();
+
+                                            // Make it so that we cant send out empty messages
+                                            if !message.trim().is_empty() {
+                                                spawn(async move {
+                                                    chatroom_message_sender.send(WebSocketChatroomMessageServer::new(user_session, None, chatroom_info.chatroom_uid, WebSocketChatroomMessages::StringMessage(message.to_string()),  chrono::Utc::now().naive_local())).await.unwrap();
+                                                });
+                                            }
                                         },
 
                                         "Send"

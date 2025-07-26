@@ -12,9 +12,7 @@ use parking_lot::Mutex;
 use reqwest::Client;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_tungstenite::tungstenite::Message;
-use whatssock_lib::{
-    server::WebSocketChatroomMessageServer, UserSession,
-};
+use whatssock_lib::{server::WebSocketChatroomMessageServer, UserSession};
 pub mod api_requests;
 pub mod authentication;
 pub mod ui;

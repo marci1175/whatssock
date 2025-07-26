@@ -1,10 +1,11 @@
-use std::env;
+use std::{env, sync::Arc};
 
 use axum::{
     Router,
     routing::{any, get, post},
     serve,
 };
+use dashmap::DashMap;
 use diesel::{
     PgConnection,
     r2d2::{self, ConnectionManager},
@@ -14,9 +15,7 @@ use tokio::net::TcpListener;
 use whatssock_server::{
     ServerState,
     api::{
-        chatrooms::{
-            create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, fetch_user,
-        },
+        chatrooms::{create_chatroom, fetch_known_chatrooms, fetch_unknown_chatroom, fetch_user},
         user_account_control::{
             fetch_login, fetch_session_token, handle_logout_request, register_user,
         },
@@ -66,5 +65,9 @@ pub fn establish_state() -> anyhow::Result<ServerState> {
     let pg_pool: r2d2::Pool<ConnectionManager<PgConnection>> =
         r2d2::Builder::new().build(ConnectionManager::new(database_url))?;
 
-    Ok(ServerState { pg_pool })
+    Ok(ServerState {
+        pg_pool,
+        connected_users_websockets: (),
+        currently_online_chatrooms: Arc::new(DashMap::new()),
+    })
 }

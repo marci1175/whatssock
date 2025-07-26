@@ -319,6 +319,7 @@ input:hover, .button:hover {
 #chat_input_row {
   display: flex;
   flex: 1;
+  border-top: #a3a3a3 1px solid;
 }
 
 #send_message_button, #chat_input {

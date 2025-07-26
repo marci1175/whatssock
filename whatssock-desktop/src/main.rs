@@ -68,11 +68,6 @@ fn init_application() -> Element {
     use_root_context(|| server_sender_clone);
     let mut log_res: Signal<Option<(UserSession, UserInformation)>> = use_signal(|| None);
     use_root_context::<Signal<Option<(UserSession, UserInformation)>>>(|| Signal::new(None));
-    use_root_context(|| {
-        let (sender, reciever) = init_websocket_connection();
-
-        (sender, Arc::new(Mutex::new(reciever)))
-    });
 
     if let Ok(encrypted_bytes) = fs::read(&*COOKIE_SAVE_PATH) {
         // We should decrypt the bytes so that we can get the cookie

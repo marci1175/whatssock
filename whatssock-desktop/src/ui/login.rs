@@ -1,6 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
+    api_requests::init_websocket_connection,
     authentication::auth::{deserialize_into_user_session, store_user_session_on_disk},
     HttpClient, Route, COOKIE_SAVE_PATH,
 };
@@ -181,8 +182,15 @@ pub fn Login() -> Element {
 
                 // Check if we have logged in
                 {
-                    if let Some(user_session) = user_session_login.read().clone() {
-                        provide_root_context(user_session);
+                    if let Some((user_session, user_information)) = user_session_login.read().clone() {
+                        provide_root_context((user_session.clone(), user_information));
+
+                        provide_root_context({
+                            let (sender, reciever) = init_websocket_connection(user_session.clone());
+
+                            (sender, Arc::new(Mutex::new(reciever)))
+                        });
+
                         navigator.push(crate::Route::MainPage { });
                     }
                 }
