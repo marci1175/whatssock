@@ -11,6 +11,8 @@ use diesel::{
     r2d2::{self, ConnectionManager},
 };
 use dotenvy::dotenv;
+use env_logger::Env;
+use log::{error, info};
 use tokio::net::TcpListener;
 use whatssock_server::{
     ServerState,
@@ -25,8 +27,11 @@ use whatssock_server::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    console_subscriber::init();
 
+    info!("Initalizing server state...");
+    
     // Establish connection with the database
     let servere_state = establish_state()?;
 
@@ -46,7 +51,11 @@ async fn main() -> anyhow::Result<()> {
         .route("/ws/chatroom", any(handler))
         .with_state(servere_state);
 
+    info!("Initalizing tcp listener...");
+        
     let listener = TcpListener::bind("[::1]:3004").await?;
+
+    info!("Serving service...");
 
     serve(listener, router).await?;
 
@@ -60,6 +69,8 @@ pub fn establish_state() -> anyhow::Result<ServerState> {
 
     // Fetch the DATABASE URL
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+    info!("Connecting to DB...");
 
     // Establish connection with the database
     let pg_pool: r2d2::Pool<ConnectionManager<PgConnection>> =

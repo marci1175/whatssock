@@ -5,10 +5,8 @@ use std::{
 
 use axum::{
     extract::{
-        State, WebSocketUpgrade,
-        ws::{Message, WebSocket},
-    },
-    response::Response,
+        ws::{Message, WebSocket}, State, WebSocketUpgrade
+    }, http::StatusCode, response::Response
 };
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
@@ -87,10 +85,21 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                                     .unwrap();
 
                             // Handle the incoming message
-                            let relayed_message =
-                                handle_incoming_chatroom_message(&state, ws_msg.clone())
-                                    .await
-                                    .unwrap();
+                            let relayed_message = match handle_incoming_chatroom_message(
+                                &state,
+                                ws_msg.clone(),
+                            )
+                            .await
+                            {
+                                Ok(relayed_msg) => relayed_msg,
+                                Err(err) => {
+                                    error!(
+                                        "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...", ws_msg.message_owner_session.user_id
+                                    );
+
+                                    break;
+                                }
+                            };
 
                             // Relay the message
                             // Check if there is a chatroom handler for this message
@@ -168,6 +177,7 @@ pub fn create_chatroom_handler(
     available_chatrooms_handle.insert(this_chatroom_id, (cancellation_token, sender.clone()));
     chatroom_subscriptions.insert(this_chatroom_id, DashMap::new());
 
+    // Spawn chatroom handler
     spawn(async move {
         loop {
             select! {
