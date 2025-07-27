@@ -12,7 +12,7 @@ use diesel::{
 };
 use dotenvy::dotenv;
 use env_logger::Env;
-use log::{error, info};
+use log::info;
 use tokio::net::TcpListener;
 use whatssock_server::{
     ServerState,
@@ -31,7 +31,7 @@ async fn main() -> anyhow::Result<()> {
     console_subscriber::init();
 
     info!("Initalizing server state...");
-    
+
     // Establish connection with the database
     let servere_state = establish_state()?;
 
@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(servere_state);
 
     info!("Initalizing tcp listener...");
-        
+
     let listener = TcpListener::bind("[::1]:3004").await?;
 
     info!("Serving service...");

@@ -1,13 +1,9 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::sync::Arc;
 
-use axum::extract::ws::{Message, WebSocket};
+use axum::extract::ws::Message;
 use dashmap::DashMap;
 use diesel::{PgConnection, r2d2::ConnectionManager};
-use futures_util::stream::SplitSink;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::Sender;
 use tokio_util::sync::CancellationToken;
 
 pub mod api;

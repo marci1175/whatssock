@@ -1,15 +1,14 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use axum::{
     extract::{
-        ws::{Message, WebSocket}, State, WebSocketUpgrade
-    }, http::StatusCode, response::Response
+        State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
+    response::Response,
 };
 use dashmap::DashMap;
-use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use futures_util::{SinkExt, StreamExt};
 use log::error;
 use tokio::{
     select, spawn,
@@ -24,7 +23,6 @@ use whatssock_lib::{UserSession, server::WebSocketChatroomMessageServer};
 use crate::{
     ServerState,
     api::{chatrooms::handle_incoming_chatroom_message, user_account_control::verify_user_session},
-    schema::messages,
 };
 
 pub async fn handler(state: State<ServerState>, ws: WebSocketUpgrade) -> Response {
@@ -94,7 +92,8 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                                 Ok(relayed_msg) => relayed_msg,
                                 Err(err) => {
                                     error!(
-                                        "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...", ws_msg.message_owner_session.user_id
+                                        "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...",
+                                        ws_msg.message_owner_session.user_id
                                     );
 
                                     break;
@@ -108,12 +107,11 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                             {
                                 sender_handle.1.clone()
                             } else {
-                                let sender = create_chatroom_handler(
+                                create_chatroom_handler(
                                     chatroom_subscriptions_handle.clone(),
                                     currently_available_chatroom_handlers.clone(),
                                     ws_msg.sent_to,
-                                );
-                                sender
+                                )
                             };
 
                             subscribe_to_channel_handler(

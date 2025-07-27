@@ -27,7 +27,7 @@ pub struct FetchKnownChatroomResponse {
     pub chatrooms: Vec<FetchChatroomResponse>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 pub struct FetchChatroomResponse {
     pub chatroom_uid: i32,
     pub chatroom_id: String,
