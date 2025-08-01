@@ -4,7 +4,8 @@ use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use tokio::select;
+use tokio::{select, sync::mpsc::{Receiver, Sender}};
+use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
     client::{UserInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
@@ -20,15 +21,11 @@ use crate::{
 pub fn MainPage() -> Element {
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
 
-    let (websocket_sender, remote_receiver) = use_root_context(|| {
-        let (sender, reciever) = init_websocket_connection(user_session.clone());
-
-        (sender, Arc::new(Mutex::new(reciever)))
-    });
+    let (websocket_sender, remote_receiver) = use_context::<(Sender<WebSocketChatroomMessageServer>, Arc<Mutex<Receiver<Message>>>)>();
 
     let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
-
-    let application_ctx = use_root_context(|| ApplicationContext {
+    
+    let application_ctx = provide_root_context(ApplicationContext {
         authed_http_client: AuthHttpClient::new(http_client, user_session.clone()),
         websocket_client_out: websocket_sender,
         websocket_client_in: remote_receiver,
@@ -94,6 +91,12 @@ pub fn MainPage() -> Element {
     use_hook(|| {
         spawn(async move {
             let client = client_chatroom_requester.clone();
+
+            // If we have no chatrooms joined dont even bother fetching them
+            if chatrooms_joined.is_empty() {
+                return;
+            }
+
             let chatroom_ids: Vec<i32> = chatrooms_joined.iter().map(|id| id.unwrap()).collect();
 
             let response = client.fetch_known_chatrooms(chatroom_ids).await.unwrap();

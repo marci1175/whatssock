@@ -6,7 +6,11 @@ use chacha20poly1305::{
     AeadCore, ChaCha20Poly1305, KeyInit,
 };
 use sha2::{Digest, Sha256};
-use whatssock_lib::UserSession;
+use whatssock_lib::{server::LoginResponse, UserSession};
+
+pub fn deserialize_into_login_response(json_input: String) -> Result<LoginResponse> {
+    Ok(serde_json::from_str(&json_input)?)
+}
 
 pub fn deserialize_into_user_session(json_input: String) -> Result<UserSession> {
     Ok(serde_json::from_str(&json_input)?)

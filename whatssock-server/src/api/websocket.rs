@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use std::{net::{Ipv4Addr, SocketAddr, SocketAddrV4}, sync::Arc};
 
 use axum::{
     extract::{
-        State, WebSocketUpgrade,
+        ConnectInfo, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
     response::Response,
@@ -25,28 +25,18 @@ use crate::{
     api::{chatrooms::handle_incoming_chatroom_message, user_account_control::verify_user_session},
 };
 
-pub async fn handler(state: State<ServerState>, ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(|socket| handle_socket(state, socket))
+pub async fn handler(
+    state: State<ServerState>,
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    ws.on_upgrade(move |socket| handle_socket(state, socket, addr))
 }
 
-pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
+pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_addr: SocketAddr) {
     let (mut sender, mut reader) = socket.split();
 
     let (client_thread_sender_handle, mut sender_receiver) = mpsc::channel::<Message>(255);
-
-    // Spawn client writer
-    spawn(async move {
-        loop {
-            select! {
-                Some(message) = sender_receiver.recv() => {
-                    sender.send(message).await.unwrap();
-                }
-                else => {
-                    break;
-                }
-            }
-        }
-    });
 
     // Read authenticative first message
     if let Some(Ok(auth_msg)) = reader.next().await {
@@ -61,6 +51,16 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                 error!("Error encountered when trying to authenticate WebSocket: {err}");
 
                 // Close handler
+                return;
+            };
+            
+            let curr_open_conn = state.currently_open_connections.clone();
+            let curr_open_conn_clone = curr_open_conn.clone();
+
+            // Dont allow multiple ws connections from the same address
+            if !curr_open_conn.insert(remote_addr) {
+                error!("Remote: {remote_addr} tried to open two or more connections.");
+                curr_open_conn.remove(&remote_addr);
                 return;
             };
 
@@ -95,7 +95,7 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                                         "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...",
                                         ws_msg.message_owner_session.user_id
                                     );
-
+                                    curr_open_conn.remove(&remote_addr);
                                     break;
                                 }
                             };
@@ -134,7 +134,21 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket) {
                 }
             });
 
-            // Spawn sender thread
+            // Spawn client writer
+            spawn(async move {
+                loop {
+                    select! {
+                        Some(message) = sender_receiver.recv() => {
+                            sender.send(message).await.unwrap();
+                        }
+                        else => {
+                            curr_open_conn_clone.remove(&remote_addr);
+
+                            break;
+                        }
+                    }
+                }
+            });
         }
     }
 }

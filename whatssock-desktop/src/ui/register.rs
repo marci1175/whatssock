@@ -1,12 +1,12 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    authentication::auth::{deserialize_into_user_session, store_user_session_on_disk},
+    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
     ApplicationContext, HttpClient, COOKIE_SAVE_PATH,
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
-use whatssock_lib::UserSession;
+use whatssock_lib::{server::LoginResponse, UserSession};
 
 enum AttemptResult {
     Attempted(String),
@@ -26,11 +26,10 @@ impl Display for AttemptResult {
 
 #[component]
 pub fn Register() -> Element {
-    let application_ctx = use_context::<ApplicationContext>();
     let navigator = navigator();
     let client = use_context::<Arc<Mutex<HttpClient>>>();
     let mut log_res: Signal<Option<AttemptResult>> = use_signal(|| None);
-    let mut user_session_login: Signal<Option<UserSession>, SyncStorage> = use_signal_sync(|| None);
+    let mut user_login_response: Signal<Option<LoginResponse>, SyncStorage> = use_signal_sync(|| None);
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut email = use_signal(String::new);
@@ -82,14 +81,14 @@ pub fn Register() -> Element {
                     spawn(async move {
                         match client.lock().send_register_request(username.to_string(), password.to_string(), email.to_string()).await {
                             Ok(response) => {
-                                let user_session = deserialize_into_user_session(response.text().await.unwrap()).unwrap();
+                                let login_response = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
 
                                 // Update state
                                 log_res.set(Some(AttemptResult::Succeeded("Register Successful! Redirecting....".to_string())));
 
-                                user_session_login.set(Some(user_session.clone()));
+                                user_login_response.set(Some(login_response.clone()));
 
-                                store_user_session_on_disk(&user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
+                                store_user_session_on_disk(&login_response.user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
                             },
                             Err(err) => {
                                 tracing::error!("Error occured when registering: {}", err.to_string());
@@ -148,8 +147,8 @@ pub fn Register() -> Element {
 
                 // Check if we have logged in
                 {
-                    if let Some(user_session) = user_session_login.read().clone() {
-                        provide_root_context(user_session);
+                    if let Some(login_response) = user_login_response.read().clone() {
+                        provide_root_context((login_response.user_session, login_response.user_information));
                         navigator.push(crate::Route::MainPage { });
                     }
                 }

@@ -96,9 +96,8 @@ pub async fn fetch_login(
     }
 
     Ok(Json(LoginResponse {
-        user_id: user_account.id,
-        session_token: session_cookie_token,
-        chatrooms_joined: user_account.chatrooms_joined,
+        user_information: UserInformation { username: user_account.username, chatrooms_joined: user_account.chatrooms_joined, user_id: user_account.id },
+        user_session: UserSession { user_id: user_account.id, session_token: session_cookie_token }
     }))
 }
 
@@ -168,9 +167,8 @@ pub async fn register_user(
         })?;
 
     Ok(Json(LoginResponse {
-        user_id: user_account.id,
-        session_token: session_cookie_token,
-        chatrooms_joined: user_account.chatrooms_joined,
+        user_session: UserSession { user_id: user_account.id, session_token: session_cookie_token },
+        user_information: UserInformation { username: user_account.username, chatrooms_joined: user_account.chatrooms_joined, user_id: user_account.id }
     }))
 }
 

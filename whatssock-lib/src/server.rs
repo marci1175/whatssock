@@ -1,12 +1,11 @@
 use chrono::NaiveDateTime;
 
-use crate::{UserSession, WebSocketChatroomMessages};
+use crate::{client::UserInformation, UserSession, WebSocketChatroomMessages};
 
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LoginResponse {
-    pub user_id: i32,
-    pub session_token: [u8; 32],
-    pub chatrooms_joined: Vec<Option<i32>>,
+    pub user_information: UserInformation,
+    pub user_session: UserSession,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug)]

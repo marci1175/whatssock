@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::extract::ws::Message;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use diesel::{PgConnection, r2d2::ConnectionManager};
-use tokio::sync::broadcast::Sender;
+use tokio::sync::{RwLock, broadcast::Sender};
 use tokio_util::sync::CancellationToken;
 
 pub mod api;
@@ -25,4 +25,5 @@ pub struct ServerState {
     >,
     pub chatroom_subscriptions:
         Arc<DashMap<i32, DashMap<i32, tokio::sync::mpsc::Sender<axum::extract::ws::Message>>>>,
+    pub currently_open_connections: Arc<DashSet<SocketAddr>>,
 }

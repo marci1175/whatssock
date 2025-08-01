@@ -5,8 +5,7 @@ use parking_lot::Mutex;
 use reqwest::Client;
 use std::{format, fs, path::PathBuf, sync::Arc};
 use whatssock_desktop::{
-    authentication::auth::{create_hwid_key, decrypt_bytes},
-    HttpClient, Route, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{create_hwid_key, decrypt_bytes}, HttpClient, Route, COOKIE_SAVE_PATH
 };
 use whatssock_lib::{client::UserInformation, UserSession};
 
@@ -103,9 +102,14 @@ fn init_application() -> Element {
     }
 
     use_effect(move || {
-        if let Some(active_session) = (*log_res.read()).clone() {
+        if let Some((usr_session, user_info)) = (*log_res.read()).clone() {
             let mut session = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
-            session.set(Some(active_session));
+            session.set(Some((usr_session.clone(), user_info)));
+            provide_root_context({
+                let (sender, reciever) = init_websocket_connection(usr_session.clone());
+
+                (sender, Arc::new(Mutex::new(reciever)))
+            });
         }
     });
 

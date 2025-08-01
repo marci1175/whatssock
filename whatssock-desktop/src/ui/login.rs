@@ -2,7 +2,7 @@ use std::{fmt::Display, sync::Arc};
 
 use crate::{
     api_requests::init_websocket_connection,
-    authentication::auth::{deserialize_into_user_session, store_user_session_on_disk},
+    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
     HttpClient, Route, COOKIE_SAVE_PATH,
 };
 use dioxus::{logger::tracing, prelude::*};
@@ -90,30 +90,13 @@ pub fn Login() -> Element {
 
                         match client.fetch_login(username.to_string(), password.to_string()).await {
                             Ok(response) => {
-                                let user_session = deserialize_into_user_session(response.text().await.unwrap()).unwrap();
+                                let login_response = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
 
-                                tracing::info!("{:?}", &user_session);
+                                tracing::info!("{:?}", &login_response);
 
-                                // Verify user session with server
-                                match client
-                                    .verify_user_session(user_session.clone())
-                                    .await
-                                {
-                                    Ok(response) => {
-                                        let user_information = serde_json::from_str::<UserInformation>(&response.text().await.unwrap()).unwrap();
+                                user_session_login.set(Some((login_response.user_session.clone(), login_response.user_information)));
 
-                                        user_session_login.set(Some((user_session.clone(), user_information)));
-                                    }
-                                    Err(err) => {
-                                        tracing::error!("Error occured when verifying session token: {}", err.to_string());
-
-                                        // Update state
-                                        log_res.set(Some(AttemptResult::Failed(err.to_string())));
-                                    }
-                                };
-
-
-                                store_user_session_on_disk(&user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
+                                store_user_session_on_disk(&login_response.user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
 
                                 // Update state
                                 log_res.set(Some(AttemptResult::Succeeded("Login Successful! Redirecting....".to_string())));

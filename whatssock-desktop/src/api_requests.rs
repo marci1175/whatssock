@@ -200,7 +200,7 @@ pub fn init_websocket_connection(
     let (remote_sender, remote_receiver) = channel::<Message>(255);
 
     tokio::spawn(async move {
-        loop {
+        'mainloop: loop {
             let (ws_socket, response) = match connect_async({
                 #[cfg(debug_assertions)]
                 {
@@ -247,7 +247,9 @@ pub fn init_websocket_connection(
                             },
                             None => {
                                 error!("Websocket receiver handler channel closed. Websocket closed.");
-                                break;
+
+                                // Break the main loop so that we wont keep opening connections to the server.
+                                break 'mainloop;
                             },
                         }
                     },

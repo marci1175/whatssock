@@ -1,11 +1,9 @@
-use std::{env, sync::Arc};
+use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    Router,
-    routing::{any, get, post},
-    serve,
+    body::Body, extract::Request, http::{Response, StatusCode}, middleware::{self, Next}, routing::{any, get, post}, serve, Router
 };
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use diesel::{
     PgConnection,
     r2d2::{self, ConnectionManager},
@@ -13,7 +11,7 @@ use diesel::{
 use dotenvy::dotenv;
 use env_logger::Env;
 use log::info;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::RwLock};
 use whatssock_server::{
     ServerState,
     api::{
@@ -24,6 +22,21 @@ use whatssock_server::{
         websocket::handler,
     },
 };
+
+async fn log_request(request: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode>
+{
+    let method = request.method().clone();
+    let uri = request.uri().clone();
+
+    println!("> Incoming: {} {}", method, uri);
+    println!("> Headers: {:?}", request.headers());
+
+    let response = next.run(request).await;
+
+    println!("< Response status: {}", response.status());
+
+    Ok(response)
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/chatroom_new", post(create_chatroom))
         .route("/api/fetch_user", get(fetch_user))
         .route("/ws/chatroom", any(handler))
+        .layer(middleware::from_fn(log_request))
         .with_state(servere_state);
 
     info!("Initalizing tcp listener...");
@@ -57,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Serving service...");
 
-    serve(listener, router).await?;
+    serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await?;
 
     Ok(())
 }
@@ -80,5 +94,6 @@ pub fn establish_state() -> anyhow::Result<ServerState> {
         pg_pool,
         chatroom_subscriptions: Arc::new(DashMap::new()),
         currently_online_chatrooms: Arc::new(DashMap::new()),
+        currently_open_connections: Arc::new(DashSet::new()),
     })
 }
