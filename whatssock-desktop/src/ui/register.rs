@@ -1,12 +1,11 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
-    ApplicationContext, HttpClient, COOKIE_SAVE_PATH,
+    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk}, HttpClient, COOKIE_SAVE_PATH,
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
-use whatssock_lib::{server::LoginResponse, UserSession};
+use whatssock_lib::server::LoginResponse;
 
 enum AttemptResult {
     Attempted(String),
@@ -29,7 +28,8 @@ pub fn Register() -> Element {
     let navigator = navigator();
     let client = use_context::<Arc<Mutex<HttpClient>>>();
     let mut log_res: Signal<Option<AttemptResult>> = use_signal(|| None);
-    let mut user_login_response: Signal<Option<LoginResponse>, SyncStorage> = use_signal_sync(|| None);
+    let mut user_login_response: Signal<Option<LoginResponse>, SyncStorage> =
+        use_signal_sync(|| None);
     let mut username = use_signal(String::new);
     let mut password = use_signal(String::new);
     let mut email = use_signal(String::new);

@@ -4,7 +4,10 @@ use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
 use indexmap::IndexMap;
 use parking_lot::Mutex;
-use tokio::{select, sync::mpsc::{Receiver, Sender}};
+use tokio::{
+    select,
+    sync::mpsc::{Receiver, Sender},
+};
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
     client::{UserInformation, WebSocketChatroomMessageClient},
@@ -14,17 +17,20 @@ use whatssock_lib::{
 };
 
 use crate::{
-    api_requests::init_websocket_connection, ApplicationContext, AuthHttpClient, HttpClient, Route,
+    ApplicationContext, AuthHttpClient, HttpClient, Route,
 };
 
 #[component]
 pub fn MainPage() -> Element {
     let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
 
-    let (websocket_sender, remote_receiver) = use_context::<(Sender<WebSocketChatroomMessageServer>, Arc<Mutex<Receiver<Message>>>)>();
+    let (websocket_sender, remote_receiver) = use_context::<(
+        Sender<WebSocketChatroomMessageServer>,
+        Arc<Mutex<Receiver<Message>>>,
+    )>();
 
     let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
-    
+
     let application_ctx = provide_root_context(ApplicationContext {
         authed_http_client: AuthHttpClient::new(http_client, user_session.clone()),
         websocket_client_out: websocket_sender,
@@ -43,7 +49,7 @@ pub fn MainPage() -> Element {
     let mut available_chatrooms: Signal<Vec<FetchChatroomResponse>> = use_signal(Vec::new);
     let mut cached_chat_messages: Signal<IndexMap<i32, Vec<WebSocketChatroomMessageClient>>> =
         use_signal(IndexMap::new);
-    
+
     let mut chatroom_id_buffer = use_signal(String::new);
     let mut new_chatroom_name_buffer = use_signal(String::new);
     let mut chatroom_passw_buffer = use_signal(String::new);

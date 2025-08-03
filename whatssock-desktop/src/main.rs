@@ -5,7 +5,9 @@ use parking_lot::Mutex;
 use reqwest::Client;
 use std::{format, fs, path::PathBuf, sync::Arc};
 use whatssock_desktop::{
-    api_requests::init_websocket_connection, authentication::auth::{create_hwid_key, decrypt_bytes}, HttpClient, Route, COOKIE_SAVE_PATH
+    api_requests::init_websocket_connection,
+    authentication::auth::{create_hwid_key, decrypt_bytes},
+    HttpClient, Route, COOKIE_SAVE_PATH,
 };
 use whatssock_lib::{client::UserInformation, UserSession};
 

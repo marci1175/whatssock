@@ -1,7 +1,13 @@
 use std::{env, net::SocketAddr, sync::Arc};
 
 use axum::{
-    body::Body, extract::Request, http::{Response, StatusCode}, middleware::{self, Next}, routing::{any, get, post}, serve, Router
+    Router,
+    body::Body,
+    extract::Request,
+    http::{Response, StatusCode},
+    middleware::{self, Next},
+    routing::{any, get, post},
+    serve,
 };
 use dashmap::{DashMap, DashSet};
 use diesel::{
@@ -11,7 +17,7 @@ use diesel::{
 use dotenvy::dotenv;
 use env_logger::Env;
 use log::info;
-use tokio::{net::TcpListener, sync::RwLock};
+use tokio::net::TcpListener;
 use whatssock_server::{
     ServerState,
     api::{
@@ -23,8 +29,7 @@ use whatssock_server::{
     },
 };
 
-async fn log_request(request: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode>
-{
+async fn log_request(request: Request<Body>, next: Next) -> Result<Response<Body>, StatusCode> {
     let method = request.method().clone();
     let uri = request.uri().clone();
 
@@ -71,7 +76,11 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Serving service...");
 
-    serve(listener, router.into_make_service_with_connect_info::<SocketAddr>()).await?;
+    serve(
+        listener,
+        router.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
 }

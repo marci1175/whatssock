@@ -10,7 +10,7 @@ use crate::{
 use axum::{Json, extract::State, http::StatusCode};
 use diesel::dsl::count_star;
 use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
-use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, delete};
+use diesel::{ExpressionMethods, QueryResult, RunQueryDsl, SelectableHelper, delete};
 use log::error;
 use rand::{Rng, rng};
 use whatssock_lib::UserSession;
@@ -96,8 +96,15 @@ pub async fn fetch_login(
     }
 
     Ok(Json(LoginResponse {
-        user_information: UserInformation { username: user_account.username, chatrooms_joined: user_account.chatrooms_joined, user_id: user_account.id },
-        user_session: UserSession { user_id: user_account.id, session_token: session_cookie_token }
+        user_information: UserInformation {
+            username: user_account.username,
+            chatrooms_joined: user_account.chatrooms_joined,
+            user_id: user_account.id,
+        },
+        user_session: UserSession {
+            user_id: user_account.id,
+            session_token: session_cookie_token,
+        },
     }))
 }
 
@@ -167,8 +174,15 @@ pub async fn register_user(
         })?;
 
     Ok(Json(LoginResponse {
-        user_session: UserSession { user_id: user_account.id, session_token: session_cookie_token },
-        user_information: UserInformation { username: user_account.username, chatrooms_joined: user_account.chatrooms_joined, user_id: user_account.id }
+        user_session: UserSession {
+            user_id: user_account.id,
+            session_token: session_cookie_token,
+        },
+        user_information: UserInformation {
+            username: user_account.username,
+            chatrooms_joined: user_account.chatrooms_joined,
+            user_id: user_account.id,
+        },
     }))
 }
 
@@ -277,4 +291,17 @@ pub fn verify_user_session(
     }
 
     Ok(())
+}
+
+pub fn lookup_joined_chatrooms(
+    // A valid DB connection
+    pg_connection: &mut r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    >,
+    user_uid: i32,
+) -> QueryResult<Vec<Option<i32>>> {
+    users
+        .filter(id.eq(user_uid))
+        .select(UserAccountEntry::as_select())
+        .get_result(pg_connection).map(|entry| entry.chatrooms_joined)
 }

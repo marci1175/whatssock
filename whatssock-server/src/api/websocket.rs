@@ -1,4 +1,7 @@
-use std::{net::{Ipv4Addr, SocketAddr, SocketAddrV4}, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use axum::{
     extract::{
@@ -9,7 +12,7 @@ use axum::{
 };
 use dashmap::DashMap;
 use futures_util::{SinkExt, StreamExt};
-use log::error;
+use log::{error, info};
 use tokio::{
     select, spawn,
     sync::{
@@ -22,7 +25,10 @@ use whatssock_lib::{UserSession, server::WebSocketChatroomMessageServer};
 
 use crate::{
     ServerState,
-    api::{chatrooms::handle_incoming_chatroom_message, user_account_control::verify_user_session},
+    api::{
+        chatrooms::handle_incoming_chatroom_message,
+        user_account_control::{lookup_joined_chatrooms, verify_user_session},
+    },
 };
 
 pub async fn handler(
@@ -53,7 +59,46 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 // Close handler
                 return;
             };
-            
+
+            let currently_available_chatroom_handlers = state.currently_online_chatrooms.clone();
+            let chatroom_subscriptions_handle = state.chatroom_subscriptions.clone();
+
+            // Get which chatrooms the user is present in
+            match lookup_joined_chatrooms(&mut pg_connection, user_session.user_id) {
+                Ok(joined_chatrooms) => {
+                    // Automaticly subscribe to the chatrooms which the user has joined
+                    for joined_chatroom in joined_chatrooms {
+                        // We can safely unwrap here, the option is just a weird trait of diesel
+                        let chatroom_id = joined_chatroom.unwrap();
+
+                        if currently_available_chatroom_handlers
+                            .get(&chatroom_id)
+                            .is_none()
+                        {
+                            // Create chatroom handler if it doesnt exist yet
+                            create_chatroom_handler(
+                                chatroom_subscriptions_handle.clone(),
+                                currently_available_chatroom_handlers.clone(),
+                                chatroom_id,
+                            );
+                        }
+
+                        // Subscribe to chatroom
+                        subscribe_to_channel_handler(
+                            chatroom_id,
+                            user_session.user_id,
+                            client_thread_sender_handle.clone(),
+                            chatroom_subscriptions_handle.clone(),
+                        );
+                    }
+                }
+                Err(err) => {
+                    error!(
+                        "An error occured when trying to fetch which chatrooms the user was present in: {err}"
+                    )
+                }
+            }
+
             let curr_open_conn = state.currently_open_connections.clone();
             let curr_open_conn_clone = curr_open_conn.clone();
 
@@ -63,9 +108,6 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 curr_open_conn.remove(&remote_addr);
                 return;
             };
-
-            let currently_available_chatroom_handlers = state.currently_online_chatrooms.clone();
-            let chatroom_subscriptions_handle = state.chatroom_subscriptions.clone();
 
             // Spawn client receiver thread
             spawn(async move {
@@ -222,6 +264,7 @@ pub fn create_chatroom_handler(
 
                     // If there are no more users left in the chatroom delete it.
                     if chatroom_is_empty {
+                        info!("Removing chatroom: {this_chatroom_id} as there are no participants left.");
                         chatroom_subscriptions.remove(&this_chatroom_id);
                     }
                 }

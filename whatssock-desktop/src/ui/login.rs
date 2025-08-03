@@ -79,6 +79,8 @@ pub fn Login() -> Element {
                 }
 
                 button { id: "ui_button", class: "button", onclick: move |_| {
+                    println!("asd");
+
                     // Update state
                     log_res.set(Some(AttemptResult::Attempted("Logging in...".to_string())));
 
@@ -90,6 +92,7 @@ pub fn Login() -> Element {
 
                         match client.fetch_login(username.to_string(), password.to_string()).await {
                             Ok(response) => {
+                                dbg!(&response);
                                 let login_response = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
 
                                 tracing::info!("{:?}", &login_response);
