@@ -1,10 +1,12 @@
 use crate::api::chatrooms::users::dsl::users;
-use crate::api::user_account_control::verify_user_session;
+use crate::api::user_account_control::{update_chatroom_last_msg, verify_user_session};
 use crate::schema::messages::dsl::messages;
 
-use crate::models::{ChatroomEntry, NewChatroom, NewMessage, UserAccountEntry};
+use crate::models::{ChatroomEntry, MessageEntry, NewChatroom, NewMessage, UserAccountEntry};
 use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::chatrooms::{chatroom_id, chatroom_password, participants};
+use crate::schema::messages::parent_chatroom_id;
+use crate::schema::user_signin_tokens::session_token;
 use crate::schema::users::{chatrooms_joined, id};
 use crate::{
     ServerState,
@@ -12,16 +14,19 @@ use crate::{
 };
 use axum::{Json, extract::State, http::StatusCode};
 use chrono::Utc;
+use diesel::associations::HasTable;
+use diesel::dsl::exists;
 use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
-use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, insert_into};
+use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, insert_into, select};
 use log::error;
 use rand::Rng;
 use rand::distr::Uniform;
-use whatssock_lib::client::WebSocketChatroomMessageClient;
+use whatssock_lib::client::{FetchMessages, WebSocketChatroomMessageClient};
 use whatssock_lib::server::WebSocketChatroomMessageServer;
 use whatssock_lib::{
-    CreateChatroomRequest, FetchChatroomResponse, FetchKnownChatroomResponse, FetchKnownChatrooms,
-    FetchUnknownChatroom, UserLookup,
+    ChatroomMessageResponse, CreateChatroomRequest, FetchChatroomResponse,
+    FetchKnownChatroomResponse, FetchKnownChatrooms, FetchMessagesResponse, FetchUnknownChatroom,
+    UserLookup,
 };
 
 pub async fn fetch_unknown_chatroom(
@@ -233,21 +238,37 @@ pub async fn handle_incoming_chatroom_message(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
+    // Verify user session
     verify_user_session(&chatroom_request.message_owner_session, &mut pg_connection)?;
 
-    insert_into(messages)
+    let inserted_message: MessageEntry = insert_into(messages)
         .values(NewMessage {
             parent_chatroom_id: chatroom_request.sent_to,
             owner_user_id: chatroom_request.message_owner_session.user_id,
             send_date: Utc::now().naive_utc(),
             raw_message: rmp_serde::to_vec(&chatroom_request.message).unwrap(),
         })
-        .execute(&mut pg_connection)
+        .get_result(&mut pg_connection)
         .map_err(|err| {
             error!("An error occured while processing message: {}", err);
 
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
+
+    // Update chatroom last message
+    update_chatroom_last_msg(
+        inserted_message.id,
+        chatroom_request.sent_to,
+        &mut pg_connection,
+    )
+    .map_err(|err| {
+        error!(
+            "An error occured while updating chatroom information in db: {}",
+            err
+        );
+
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
     Ok(WebSocketChatroomMessageClient {
         message_owner_id: chatroom_request.message_owner_session.user_id,
@@ -290,4 +311,74 @@ pub async fn fetch_user(
     Ok(Json(UserLookup {
         username: query.username,
     }))
+}
+
+pub async fn fetch_messages(
+    State(state): State<ServerState>,
+    Json(fetch_messages_request): Json<FetchMessages>,
+) -> Result<Json<FetchMessagesResponse>, StatusCode> {
+    let mut pg_connection = state.pg_pool.get().map_err(|err| {
+        error!(
+            "An error occured while fetching login information from db: {}",
+            err
+        );
+
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    verify_user_session(&fetch_messages_request.user_session, &mut pg_connection)?;
+
+    match fetch_messages_request.message_request {
+        whatssock_lib::MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
+            unimplemented!()
+        }
+        whatssock_lib::MessageFetchType::SingluarFromId(message_id) => {
+            // Fetch the message
+            let message = messages
+                .filter(schema::messages::id.eq(message_id))
+                .select(MessageEntry::as_select())
+                .get_result(&mut pg_connection)
+                .map_err(|err| {
+                    error!("An error occured while fetching message from db: {}", err);
+
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            // Get the user's joined chatrooms to see that they have the permission to request the messages
+            let user_account = users
+                .filter(id.eq(fetch_messages_request.user_session.user_id))
+                .first::<UserAccountEntry>(&mut pg_connection)
+                .map_err(|err| {
+                    error!(
+                        "An error occured while fetching user information from db: {}",
+                        err
+                    );
+
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            // Check if the user's session exists
+            if user_account
+                .chatrooms_joined
+                .contains(&Some(message.parent_chatroom_id))
+            {
+                return Ok(Json(FetchMessagesResponse {
+                    messages: vec![ChatroomMessageResponse {
+                        id: message.id,
+                        parent_chatroom_id: message.parent_chatroom_id,
+                        owner_user_id: message.owner_user_id,
+                        send_date: message.send_date,
+                        raw_message: message.raw_message,
+                    }],
+                }));
+            } else {
+                error!(
+                    "User ID not found in db: {}",
+                    fetch_messages_request.user_session.user_id
+                );
+
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        }
+    }
 }

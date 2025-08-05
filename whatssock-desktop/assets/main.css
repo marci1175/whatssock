@@ -347,3 +347,13 @@ input:hover, .button:hover {
   direction: rtl;
   font-size: small;
 }
+
+#chatroom_last_message {
+  display: flex;
+  gap: 10px;
+  flex: 1;
+}
+
+#chatroom_last_message_name_owned {
+  color: green;
+}

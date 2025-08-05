@@ -2,23 +2,22 @@ use std::{collections::HashMap, sync::Arc};
 
 use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
+use futures_util::StreamExt;
 use indexmap::IndexMap;
 use parking_lot::Mutex;
 use tokio::{
     select,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::{channel, Receiver, Sender},
 };
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
-    client::{UserInformation, WebSocketChatroomMessageClient},
+    client::{FetchMessages, UserInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
-    FetchChatroomResponse, FetchKnownChatroomResponse, UserLookup, UserSession,
-    WebSocketChatroomMessages,
+    ChatroomMessageResponse, FetchChatroomResponse, FetchKnownChatroomResponse,
+    FetchMessagesResponse, MessageFetchType, UserLookup, UserSession, WebSocketChatroomMessages,
 };
 
-use crate::{
-    ApplicationContext, AuthHttpClient, HttpClient, Route,
-};
+use crate::{ApplicationContext, AuthHttpClient, HttpClient, Route};
 
 #[component]
 pub fn MainPage() -> Element {
@@ -47,14 +46,17 @@ pub fn MainPage() -> Element {
     let navigator = navigator();
 
     let mut available_chatrooms: Signal<Vec<FetchChatroomResponse>> = use_signal(Vec::new);
-    let mut cached_chat_messages: Signal<IndexMap<i32, Vec<WebSocketChatroomMessageClient>>> =
-        use_signal(IndexMap::new);
+    let mut cached_chat_messages: Signal<HashMap<i32, Vec<WebSocketChatroomMessageClient>>> =
+        use_signal(HashMap::new);
 
     let mut chatroom_id_buffer = use_signal(String::new);
     let mut new_chatroom_name_buffer = use_signal(String::new);
     let mut chatroom_passw_buffer = use_signal(String::new);
     let mut chatroom_message_buffer = use_signal(String::new);
     let mut selected_chatroom_node_idx = use_signal(|| 0);
+
+    let mut chatroom_last_messages_cache: Signal<HashMap<i32, ChatroomMessageResponse>> =
+        use_signal(HashMap::new);
 
     let users_cache: Signal<HashMap<i32, UserLookup>> = use_signal(HashMap::new);
     let mut users_cache_writer = users_cache;
@@ -121,6 +123,67 @@ pub fn MainPage() -> Element {
         });
     });
 
+    let user_requester_client = client.clone();
+
+    // Create a UserInformation requesting coroutine
+    // If it receives a message, it fetches the infromation from the server and stores it in `users_cache_writer`
+    let user_requester_sender = Arc::new(use_coroutine(
+        move |mut receiver: UnboundedReceiver<i32>| {
+            let user_requester_client = user_requester_client.clone();
+            async move {
+                loop {
+                    select! {
+                        Some(message_owner_id) = receiver.next() => {
+                            let lookup_response = user_requester_client.fetch_user_information(message_owner_id).await.unwrap();
+
+                            let lookup = serde_json::from_str::<UserLookup>(&lookup_response.text().await.unwrap()).unwrap();
+
+                            users_cache_writer.write().insert(message_owner_id, lookup);
+                        }
+                        else => {
+                            break;
+                        }
+                    }
+                }
+            }
+        },
+    ));
+
+    let user_requester_client = client.clone();
+
+    // Create a last message requesting coroutine
+    // It receives the message id and stores it in the messages cache specifically for this (`chatroom_last_messages_cache`)
+    let chatroom_message_requester_sender = Arc::new(use_coroutine(
+        move |mut receiver: UnboundedReceiver<MessageFetchType>| {
+            let http_client = user_requester_client.clone();
+
+            async move {
+                loop {
+                    select! {
+                        Some(message_ftch) = receiver.next() => {
+                            let fetch_response = http_client.fetch_messages(message_ftch).await.unwrap();
+
+                            let messages_fetched = serde_json::from_str::<FetchMessagesResponse>(&fetch_response.text().await.unwrap()).unwrap();
+
+                            match message_ftch {
+                                MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
+                                    unimplemented!()
+                                },
+                                MessageFetchType::SingluarFromId(_) => {
+                                    let msg = &messages_fetched.messages[0];
+                                    chatroom_last_messages_cache.write().insert(dbg!(msg.id), msg.clone());
+                                },
+                            }
+                        }
+                        else => {
+                            break;
+                        }
+                    }
+                }
+            }
+        },
+    ));
+
     rsx! {
         div {
             class: "window",
@@ -175,7 +238,80 @@ pub fn MainPage() -> Element {
                                         id: "chatroom_node_last_message",
 
                                         {
-                                            format!("{:?}", chatroom_node.last_message_id)
+                                            match chatroom_node.last_message_id {
+                                                Some(message_id) => {
+                                                    match get_or_request_message_from_id(chatroom_last_messages_cache.clone(), chatroom_message_requester_sender.clone(), message_id) {
+                                                        Some(last_msg) => {
+                                                            rsx!(
+                                                                div {
+                                                                    id: "chatroom_last_message",
+                                                                    {
+                                                                        let username = match get_or_request_user_information(users_cache.clone(), user_requester_sender.clone(), last_msg.owner_user_id) {
+                                                                                Some(user_lookup) => {
+                                                                                    user_lookup.username
+                                                                                },
+                                                                                None => {
+                                                                                    String::from("Loading...")
+                                                                                },
+                                                                            };
+
+                                                                        // We can safely unwrap here
+                                                                        let message_type = rmp_serde::from_slice::<WebSocketChatroomMessages>(&last_msg.raw_message).unwrap();
+
+                                                                        match message_type {
+                                                                            WebSocketChatroomMessages::StringMessage(message) => {
+                                                                                rsx!(
+                                                                                    div {
+                                                                                        id: "chatroom_last_message",
+
+                                                                                        div {
+                                                                                            id: {
+                                                                                                if username.clone() == user_information.username.clone() {
+                                                                                                    "chatroom_last_message_name_owned"
+                                                                                                }
+                                                                                                else {
+                                                                                                    "chatroom_last_message_name"
+                                                                                                }
+                                                                                            },
+
+                                                                                            {
+                                                                                                if username.clone() == user_information.username.clone() {
+                                                                                                    "Me"
+                                                                                                }
+                                                                                                else {
+                                                                                                    &username
+                                                                                                }
+                                                                                            }
+                                                                                        }
+
+                                                                                        div {
+                                                                                            id: "chatroom_last_message_body",
+
+                                                                                            { message }
+                                                                                        }
+                                                                                    }
+                                                                                )
+                                                                            },
+                                                                        }
+                                                                    }
+                                                                }
+                                                            )
+                                                        },
+                                                        None => {
+                                                            rsx!("Loading...")
+                                                        },
+                                                    }
+                                                },
+                                                None => {
+                                                    rsx!(
+                                                        div {
+                                                            id: "chatroom_last_message",
+
+                                                            "No messages yet."
+                                                        }
+                                                    )
+                                                },
+                                            }
                                         }
                                     }
                                 }
@@ -363,11 +499,7 @@ pub fn MainPage() -> Element {
                                             {
                                                 let message_owner_id = chatroom_msg.message_owner_id;
 
-                                                let user_cache = users_cache.read();
-                                                let client = client.clone();
-
-                                                let user_information_from_cache = user_cache.get(&message_owner_id);
-                                                match user_information_from_cache {
+                                                match get_or_request_user_information(users_cache, user_requester_sender.clone(), message_owner_id) {
                                                     Some(user_information) => {
                                                         if message_owner_id == user_session.user_id {
                                                             String::from("Me")
@@ -377,16 +509,6 @@ pub fn MainPage() -> Element {
                                                         }
                                                     },
                                                     None => {
-                                                        // Fetch user information from server
-                                                        // We will redraw once we have the account
-                                                        spawn(async move {
-                                                            let lookup_response = client.fetch_user_information(message_owner_id).await.unwrap();
-
-                                                            let lookup = serde_json::from_str::<UserLookup>(&lookup_response.text().await.unwrap()).unwrap();
-
-                                                            users_cache_writer.write().insert(message_owner_id, lookup);
-                                                        });
-
                                                         // Display loading title
                                                         String::from("loading...")
                                                     },
@@ -478,6 +600,40 @@ pub fn MainPage() -> Element {
 
                 }
             }
+        }
+    }
+}
+
+pub fn get_or_request_user_information(
+    user_info_cache: Signal<HashMap<i32, UserLookup>>,
+    user_requester_sender: Arc<Coroutine<i32>>,
+    user_id: i32,
+) -> Option<UserLookup> {
+    // Try getting the UserLookup info from the cache
+    match user_info_cache.read().get(&user_id) {
+        // if it is found return it
+        Some(user_information) => Some(user_information.clone()),
+        // if its not present send the user id to the lookup request thread so that it will request it and write it into the cache
+        None => {
+            user_requester_sender.send(user_id);
+
+            None
+        }
+    }
+}
+
+pub fn get_or_request_message_from_id(
+    last_message_cache: Signal<HashMap<i32, ChatroomMessageResponse>>,
+    message_requester_sender: Arc<Coroutine<MessageFetchType>>,
+    msg_id: i32,
+) -> Option<ChatroomMessageResponse> {
+    // Try getting the message from the cache
+    match last_message_cache.read().get(&msg_id) {
+        Some(last_message) => Some(last_message.clone()),
+        None => {
+            message_requester_sender.send(MessageFetchType::SingluarFromId(msg_id));
+
+            None
         }
     }
 }

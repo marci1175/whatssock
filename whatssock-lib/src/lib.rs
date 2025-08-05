@@ -1,7 +1,10 @@
 pub mod client;
 pub mod server;
 
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+
+use crate::client::WebSocketChatroomMessageClient;
 
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
 pub struct UserSession {
@@ -53,4 +56,31 @@ pub enum WebSocketChatroomMessages {
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct UserLookup {
     pub username: String,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy)]
+pub struct BulkChatroomMsgRequest {
+    pub chatroom_id: i32,
+    pub count: i32,
+    pub offset_id: i32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy)]
+pub enum MessageFetchType {
+    BulkFromChatroom(BulkChatroomMsgRequest),
+    SingluarFromId(i32),
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FetchMessagesResponse {
+    pub messages: Vec<ChatroomMessageResponse>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ChatroomMessageResponse {
+    pub id: i32,
+    pub parent_chatroom_id: i32,
+    pub owner_user_id: i32,
+    pub send_date: NaiveDateTime,
+    pub raw_message: Vec<u8>,
 }

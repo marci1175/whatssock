@@ -58,6 +58,13 @@ pub struct ChatroomEntry {
     pub last_message_id: Option<i32>,
 }
 
+#[derive(Debug, Clone, AsChangeset)]
+#[diesel(table_name = crate::schema::chatrooms)]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UpdateLastMessage {
+    pub last_message_id: i32,
+}
+
 #[derive(Debug, Clone, Insertable)]
 #[diesel(table_name = crate::schema::chatrooms)]
 #[diesel(check_for_backend(diesel::pg::Pg))]

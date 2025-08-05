@@ -79,8 +79,6 @@ pub fn Login() -> Element {
                 }
 
                 button { id: "ui_button", class: "button", onclick: move |_| {
-                    println!("asd");
-
                     // Update state
                     log_res.set(Some(AttemptResult::Attempted("Logging in...".to_string())));
 

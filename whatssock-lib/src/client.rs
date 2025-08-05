@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
 
-use crate::WebSocketChatroomMessages;
+use crate::{MessageFetchType, UserSession, WebSocketChatroomMessages};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct LoginRequest {
@@ -53,4 +53,10 @@ impl WebSocketChatroomMessageClient {
             date_issued,
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FetchMessages {
+    pub user_session: UserSession,
+    pub message_request: MessageFetchType,
 }

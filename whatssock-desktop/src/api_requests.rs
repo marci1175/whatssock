@@ -11,9 +11,10 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use whatssock_lib::{
-    client::{LoginRequest, RegisterRequest},
+    client::{FetchMessages, LoginRequest, RegisterRequest},
     server::WebSocketChatroomMessageServer,
-    CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, UserSession,
+    CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, MessageFetchType,
+    UserSession,
 };
 
 impl HttpClient {
@@ -182,6 +183,31 @@ impl AuthHttpClient {
             .get(format!("{}/api/fetch_user", self.client.base_url))
             .header("Content-Type", "text/plain")
             .body(user_id.to_string())
+            .send()
+            .await?;
+
+        let response_code = response.status().as_u16();
+
+        ensure!(response_code == 200, "Response code: {response_code}");
+
+        Ok(response)
+    }
+
+    pub async fn fetch_messages(
+        &self,
+        message_fetch: MessageFetchType,
+    ) -> anyhow::Result<Response> {
+        let response = self
+            .client
+            .get(format!("{}/api/fetch_messages", self.client.base_url))
+            .header("Content-Type", "application/json")
+            .body(
+                serde_json::to_string(&FetchMessages {
+                    message_request: message_fetch,
+                    user_session: self.user_session.clone(),
+                })
+                .unwrap(),
+            )
             .send()
             .await?;
 

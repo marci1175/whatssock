@@ -1,5 +1,9 @@
 use crate::api::user_account_control::users::dsl::users;
-use crate::models::{NewUserAccount, NewUserSession, UserAccountEntry, UserSessionEntry};
+use crate::models::{
+    ChatroomEntry, NewChatroom, NewUserAccount, NewUserSession, UpdateLastMessage,
+    UserAccountEntry, UserSessionEntry,
+};
+use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::user_signin_tokens::dsl::user_signin_tokens;
 use crate::schema::user_signin_tokens::{session_token, user_id};
 use crate::schema::users::{id, passw, username};
@@ -8,9 +12,11 @@ use crate::{
     schema::{self, *},
 };
 use axum::{Json, extract::State, http::StatusCode};
-use diesel::dsl::count_star;
+use diesel::dsl::{count_star, exists};
 use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
-use diesel::{ExpressionMethods, QueryResult, RunQueryDsl, SelectableHelper, delete};
+use diesel::{
+    ExpressionMethods, QueryResult, RunQueryDsl, SelectableHelper, delete, select, update,
+};
 use log::error;
 use rand::{Rng, rng};
 use whatssock_lib::UserSession;
@@ -272,21 +278,22 @@ pub fn verify_user_session(
         diesel::r2d2::ConnectionManager<diesel::PgConnection>,
     >,
 ) -> Result<(), StatusCode> {
-    let matching_user_tokens = user_signin_tokens
-        .filter(schema::user_signin_tokens::user_id.eq(user_session.user_id))
-        .filter(schema::user_signin_tokens::session_token.eq(user_session.session_token))
-        .select(count_star())
-        .get_result::<i64>(pg_connection)
-        .map_err(|err| {
-            error!(
-                "An error occured while verifying login information from db: {}",
-                err
-            );
+    let matching_user_tokens = select(exists(
+        user_signin_tokens
+            .filter(schema::user_signin_tokens::user_id.eq(user_session.user_id))
+            .filter(schema::user_signin_tokens::session_token.eq(user_session.session_token)),
+    ))
+    .get_result::<bool>(pg_connection)
+    .map_err(|err| {
+        error!(
+            "An error occured while verifying login information from db: {}",
+            err
+        );
 
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
 
-    if matching_user_tokens != 1 {
+    if !matching_user_tokens {
         return Err(StatusCode::FORBIDDEN);
     }
 
@@ -303,5 +310,20 @@ pub fn lookup_joined_chatrooms(
     users
         .filter(id.eq(user_uid))
         .select(UserAccountEntry::as_select())
-        .get_result(pg_connection).map(|entry| entry.chatrooms_joined)
+        .get_result(pg_connection)
+        .map(|entry| entry.chatrooms_joined)
+}
+
+pub fn update_chatroom_last_msg(
+    message_id: i32,
+    chatroom_id: i32,
+    pg_connection: &mut r2d2::PooledConnection<
+        diesel::r2d2::ConnectionManager<diesel::PgConnection>,
+    >,
+) -> Result<usize, diesel::result::Error> {
+    update(chatrooms.filter(schema::chatrooms::id.eq(chatroom_id)))
+        .set(&UpdateLastMessage {
+            last_message_id: message_id,
+        })
+        .execute(pg_connection)
 }
