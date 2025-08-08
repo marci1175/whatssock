@@ -1,8 +1,7 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
-    HttpClient, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{deserialize_into_login_response, store_user_session_on_disk}, HttpClient, COOKIE_SAVE_PATH
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
@@ -149,7 +148,14 @@ pub fn Register() -> Element {
                 // Check if we have logged in
                 {
                     if let Some(login_response) = user_login_response.read().clone() {
-                        provide_root_context((login_response.user_session, login_response.user_information));
+                        provide_root_context((login_response.user_session.clone(), login_response.user_information));
+                        
+                        provide_root_context({
+                            let (sender, reciever) = init_websocket_connection(login_response.user_session.clone());
+
+                            (sender, Arc::new(Mutex::new(reciever)))
+                        });
+
                         navigator.push(crate::Route::MainPage { });
                     }
                 }

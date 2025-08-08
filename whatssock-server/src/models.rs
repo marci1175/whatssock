@@ -84,16 +84,19 @@ pub struct NewMessage {
     pub parent_chatroom_id: i32,
     pub owner_user_id: i32,
     pub send_date: NaiveDateTime,
+    pub replying_to_msg: Option<i32>,
     pub raw_message: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Selectable, QueryableByName, Queryable)]
 #[diesel(table_name = crate::schema::messages)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
+#[repr(C)]
 pub struct MessageEntry {
     pub id: i32,
-    pub parent_chatroom_id: i32,
     pub owner_user_id: i32,
-    pub send_date: NaiveDateTime,
+    pub replying_to_msg: Option<i32>,
+    pub parent_chatroom_id: i32,
     pub raw_message: Vec<u8>,
+    pub send_date: NaiveDateTime,
 }

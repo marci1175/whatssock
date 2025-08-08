@@ -509,6 +509,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
+name = "bytemuck"
+version = "1.23.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3995eaeebcdf32f91f980d360f78732ddc061097ab4e39991ae7a6ace9194677"
+
+[[package]]
 name = "byteorder"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6111,6 +6117,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-tungstenite 0.27.0",
+ "web-sys",
  "whatssock-lib",
 ]
 
@@ -6118,7 +6125,9 @@ dependencies = [
 name = "whatssock-lib"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "chrono",
+ "rmp-serde",
  "serde",
 ]
 
@@ -6135,6 +6144,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum 0.8.4",
+ "bytemuck",
  "chrono",
  "console-subscriber",
  "dashmap 6.1.0",

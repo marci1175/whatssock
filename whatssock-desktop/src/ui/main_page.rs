@@ -1,20 +1,28 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+    sync::Arc,
+};
 
-use dioxus::prelude::*;
+use dioxus::{prelude::*, web::WebEventExt};
 use dioxus_toast::{ToastInfo, ToastManager};
 use futures_util::StreamExt;
-use indexmap::IndexMap;
 use parking_lot::Mutex;
 use tokio::{
     select,
-    sync::mpsc::{channel, Receiver, Sender},
+    sync::mpsc::{Receiver, Sender},
 };
 use tokio_tungstenite::tungstenite::Message;
+use web_sys::{
+    js_sys::{eval, global},
+    wasm_bindgen::convert::ReturnWasmAbi,
+};
 use whatssock_lib::{
-    client::{FetchMessages, UserInformation, WebSocketChatroomMessageClient},
+    client::{UserInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
-    ChatroomMessageResponse, FetchChatroomResponse, FetchKnownChatroomResponse,
-    FetchMessagesResponse, MessageFetchType, UserLookup, UserSession, WebSocketChatroomMessages,
+    BulkChatroomMsgRequest, ChatroomMessageResponse, FetchChatroomResponse,
+    FetchKnownChatroomResponse, FetchMessagesResponse, MessageFetchType, UserLookup, UserSession,
+    WebSocketChatroomMessages,
 };
 
 use crate::{ApplicationContext, AuthHttpClient, HttpClient, Route};
@@ -46,7 +54,7 @@ pub fn MainPage() -> Element {
     let navigator = navigator();
 
     let mut available_chatrooms: Signal<Vec<FetchChatroomResponse>> = use_signal(Vec::new);
-    let mut cached_chat_messages: Signal<HashMap<i32, Vec<WebSocketChatroomMessageClient>>> =
+    let mut cached_chat_messages: Signal<HashMap<i32, VecDeque<WebSocketChatroomMessageClient>>> =
         use_signal(HashMap::new);
 
     let mut chatroom_id_buffer = use_signal(String::new);
@@ -86,7 +94,7 @@ pub fn MainPage() -> Element {
                             let ws_msg = rmp_serde::from_slice::<WebSocketChatroomMessageClient>(&received_bytes.into_data()).unwrap();
 
                             if let Some(chatroom) = cached_chat_messages.write().get_mut(&ws_msg.sent_to) {
-                                chatroom.push(ws_msg);
+                                chatroom.push_back(ws_msg);
                             }
                         }
                     }
@@ -116,7 +124,7 @@ pub fn MainPage() -> Element {
             for chatroom in &verified_chatrooms.chatrooms {
                 cached_chat_messages
                     .write()
-                    .insert(chatroom.chatroom_uid, Vec::new());
+                    .insert(chatroom.chatroom_uid, VecDeque::new());
             }
 
             available_chatrooms.extend(verified_chatrooms.chatrooms);
@@ -167,11 +175,18 @@ pub fn MainPage() -> Element {
 
                             match message_ftch {
                                 MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
-                                    unimplemented!()
+                                    let mut cached_msgs = cached_chat_messages.write();
+
+                                    // We can safely unwrap here afaik
+                                    let msg_list = cached_msgs.get_mut(&bulk_chatroom_msg_request.chatroom_uid).unwrap();
+
+                                    for incoming_msg in messages_fetched.messages {
+                                        msg_list.push_front(incoming_msg.into());
+                                    }
                                 },
                                 MessageFetchType::SingluarFromId(_) => {
                                     let msg = &messages_fetched.messages[0];
-                                    chatroom_last_messages_cache.write().insert(dbg!(msg.id), msg.clone());
+                                    chatroom_last_messages_cache.write().insert(dbg!(msg.message_id), msg.clone());
                                 },
                             }
                         }
@@ -240,13 +255,13 @@ pub fn MainPage() -> Element {
                                         {
                                             match chatroom_node.last_message_id {
                                                 Some(message_id) => {
-                                                    match get_or_request_message_from_id(chatroom_last_messages_cache.clone(), chatroom_message_requester_sender.clone(), message_id) {
+                                                    match get_or_request_message_from_id(chatroom_last_messages_cache, chatroom_message_requester_sender.clone(), message_id) {
                                                         Some(last_msg) => {
                                                             rsx!(
                                                                 div {
                                                                     id: "chatroom_last_message",
                                                                     {
-                                                                        let username = match get_or_request_user_information(users_cache.clone(), user_requester_sender.clone(), last_msg.owner_user_id) {
+                                                                        let username = match get_or_request_user_information(users_cache, user_requester_sender.clone(), last_msg.message_owner_id) {
                                                                                 Some(user_lookup) => {
                                                                                     user_lookup.username
                                                                                 },
@@ -387,7 +402,7 @@ pub fn MainPage() -> Element {
 
                                                 let serialized_response = serde_json::from_str::<FetchChatroomResponse>(&response.text().await.unwrap()).unwrap();
 
-                                                cached_chat_messages.write().insert(serialized_response.chatroom_uid, Vec::new());
+                                                cached_chat_messages.write().insert(serialized_response.chatroom_uid, VecDeque::new());
                                                 available_chatrooms.write().push(serialized_response);
                                             });
                                         },
@@ -445,7 +460,7 @@ pub fn MainPage() -> Element {
 
                                                 let added_chatroom = serde_json::from_str::<FetchChatroomResponse>(&response.text().await.unwrap()).unwrap();
 
-                                                cached_chat_messages.write().insert(added_chatroom.chatroom_uid, Vec::new());
+                                                cached_chat_messages.write().insert(added_chatroom.chatroom_uid, VecDeque::new());
                                                 available_chatrooms.write().push(added_chatroom);
                                             });
                                         },
@@ -480,12 +495,20 @@ pub fn MainPage() -> Element {
 
                 div {
                     id: "chats",
+                    onscroll: move |_: Event<ScrollData>| {let chatroom_message_requester_sender = chatroom_message_requester_sender.clone(); async move {
+                        // Get how much we have scrolled
+                        let scroll_top = document::eval("return chats.scrollTop").await.unwrap().to_string().parse::<i32>().unwrap();
+
+                        // Request more messages to display from the server if the scroll is 0
+                        if scroll_top == 0 {
+                            chatroom_message_requester_sender.send(MessageFetchType::BulkFromChatroom(BulkChatroomMsgRequest { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().get(0).unwrap().message_id }));
+                        }
+                    }},
 
                     if let Some(currently_selected_chatroom_node) = currently_selected_chatroom_node.read().clone() {
                         for chatroom_msg in cached_chat_messages.read().get(&currently_selected_chatroom_node.chatroom_uid).unwrap() {
                             div {
                                 id: "message_node",
-
                                 // Display who sent the message
                                 {
                                     rsx!(

@@ -24,6 +24,7 @@ pub struct UserInformation {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct WebSocketChatroomMessageClient {
+    pub message_id: i32,
     /// The userid of the sender of this message.
     pub message_owner_id: i32,
     /// The message's id this message was replying to.
@@ -39,6 +40,7 @@ pub struct WebSocketChatroomMessageClient {
 
 impl WebSocketChatroomMessageClient {
     pub fn new(
+        message_id: i32,
         message_owner_id: i32,
         replying_to_msg_id: Option<i32>,
         sent_to: i32,
@@ -46,6 +48,7 @@ impl WebSocketChatroomMessageClient {
         date_issued: NaiveDateTime,
     ) -> Self {
         Self {
+            message_id,
             message_owner_id,
             replying_to_msg_id,
             sent_to,

@@ -1,7 +1,6 @@
 use crate::api::user_account_control::users::dsl::users;
 use crate::models::{
-    ChatroomEntry, NewChatroom, NewUserAccount, NewUserSession, UpdateLastMessage,
-    UserAccountEntry, UserSessionEntry,
+    NewUserAccount, NewUserSession, UpdateLastMessage, UserAccountEntry, UserSessionEntry,
 };
 use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::user_signin_tokens::dsl::user_signin_tokens;

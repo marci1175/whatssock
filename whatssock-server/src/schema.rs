@@ -15,10 +15,11 @@ diesel::table! {
 diesel::table! {
     messages (id) {
         id -> Int4,
-        parent_chatroom_id -> Int4,
         owner_user_id -> Int4,
-        send_date -> Timestamp,
+        replying_to_msg -> Nullable<Int4>,
+        parent_chatroom_id -> Int4,
         raw_message -> Bytea,
+        send_date -> Timestamp,
     }
 }
 

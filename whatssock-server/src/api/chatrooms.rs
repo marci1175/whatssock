@@ -6,7 +6,6 @@ use crate::models::{ChatroomEntry, MessageEntry, NewChatroom, NewMessage, UserAc
 use crate::schema::chatrooms::dsl::chatrooms;
 use crate::schema::chatrooms::{chatroom_id, chatroom_password, participants};
 use crate::schema::messages::parent_chatroom_id;
-use crate::schema::user_signin_tokens::session_token;
 use crate::schema::users::{chatrooms_joined, id};
 use crate::{
     ServerState,
@@ -14,11 +13,8 @@ use crate::{
 };
 use axum::{Json, extract::State, http::StatusCode};
 use chrono::Utc;
-use diesel::associations::HasTable;
-use diesel::dsl::exists;
-use diesel::query_dsl::methods::{FilterDsl, SelectDsl};
-use diesel::{ExpressionMethods, RunQueryDsl, SelectableHelper, insert_into, select};
-use log::error;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl, SelectableHelper, insert_into};
+use log::{error, warn};
 use rand::Rng;
 use rand::distr::Uniform;
 use whatssock_lib::client::{FetchMessages, WebSocketChatroomMessageClient};
@@ -26,7 +22,7 @@ use whatssock_lib::server::WebSocketChatroomMessageServer;
 use whatssock_lib::{
     ChatroomMessageResponse, CreateChatroomRequest, FetchChatroomResponse,
     FetchKnownChatroomResponse, FetchKnownChatrooms, FetchMessagesResponse, FetchUnknownChatroom,
-    UserLookup,
+    UserLookup, vec_cast,
 };
 
 pub async fn fetch_unknown_chatroom(
@@ -246,6 +242,7 @@ pub async fn handle_incoming_chatroom_message(
             parent_chatroom_id: chatroom_request.sent_to,
             owner_user_id: chatroom_request.message_owner_session.user_id,
             send_date: Utc::now().naive_utc(),
+            replying_to_msg: chatroom_request.replying_to_msg_id,
             raw_message: rmp_serde::to_vec(&chatroom_request.message).unwrap(),
         })
         .get_result(&mut pg_connection)
@@ -271,6 +268,7 @@ pub async fn handle_incoming_chatroom_message(
     })?;
 
     Ok(WebSocketChatroomMessageClient {
+        message_id: inserted_message.id,
         message_owner_id: chatroom_request.message_owner_session.user_id,
         replying_to_msg_id: chatroom_request.replying_to_msg_id,
         sent_to: chatroom_request.sent_to,
@@ -328,9 +326,60 @@ pub async fn fetch_messages(
 
     verify_user_session(&fetch_messages_request.user_session, &mut pg_connection)?;
 
-    match fetch_messages_request.message_request {
+    // Get the user's joined chatrooms to see that they have the permission to request the messages
+    let user_account = users
+        .filter(id.eq(fetch_messages_request.user_session.user_id))
+        .first::<UserAccountEntry>(&mut pg_connection)
+        .map_err(|err| {
+            error!(
+                "An error occured while fetching user information from db: {}",
+                err
+            );
+
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let requested_messages = match fetch_messages_request.message_request {
         whatssock_lib::MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
-            unimplemented!()
+            // Check for user request size
+            if bulk_chatroom_msg_request.count == 0 || bulk_chatroom_msg_request.count > 255 {
+                warn!(
+                    "The user has tried to request: `{}` amount of messages, which is invalid.",
+                    bulk_chatroom_msg_request.count
+                );
+
+                return Err(StatusCode::PAYLOAD_TOO_LARGE);
+            }
+
+            let bulk_msg_request = messages
+                .filter(schema::messages::id.gt(bulk_chatroom_msg_request.offset_id)) // only rows after the given id
+                .filter(parent_chatroom_id.eq(bulk_chatroom_msg_request.chatroom_uid)) // match attribute
+                .order(schema::messages::id.asc()) // make sure we get the "next" ones
+                .limit(bulk_chatroom_msg_request.count.into())
+                .load::<MessageEntry>(&mut pg_connection)
+                .map_err(|err| {
+                    error!("An error occured while fetching messages from db: {}", err);
+
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            // Check if the user's session exists
+            if !user_account
+                .chatrooms_joined
+                .contains(&Some(bulk_chatroom_msg_request.chatroom_uid))
+            {
+                error!(
+                    "User ID not found in db: {}",
+                    fetch_messages_request.user_session.user_id
+                );
+
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+
+            // Casting magic
+            // If this crashes please check function implmentation in the lib
+            // I love unsafe code bleeeeeeh
+            unsafe { vec_cast(bulk_msg_request) }
         }
         whatssock_lib::MessageFetchType::SingluarFromId(message_id) => {
             // Fetch the message
@@ -344,34 +393,11 @@ pub async fn fetch_messages(
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
 
-            // Get the user's joined chatrooms to see that they have the permission to request the messages
-            let user_account = users
-                .filter(id.eq(fetch_messages_request.user_session.user_id))
-                .first::<UserAccountEntry>(&mut pg_connection)
-                .map_err(|err| {
-                    error!(
-                        "An error occured while fetching user information from db: {}",
-                        err
-                    );
-
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
-
             // Check if the user's session exists
-            if user_account
+            if !user_account
                 .chatrooms_joined
                 .contains(&Some(message.parent_chatroom_id))
             {
-                return Ok(Json(FetchMessagesResponse {
-                    messages: vec![ChatroomMessageResponse {
-                        id: message.id,
-                        parent_chatroom_id: message.parent_chatroom_id,
-                        owner_user_id: message.owner_user_id,
-                        send_date: message.send_date,
-                        raw_message: message.raw_message,
-                    }],
-                }));
-            } else {
                 error!(
                     "User ID not found in db: {}",
                     fetch_messages_request.user_session.user_id
@@ -379,6 +405,19 @@ pub async fn fetch_messages(
 
                 return Err(StatusCode::UNAUTHORIZED);
             }
+
+            vec![ChatroomMessageResponse {
+                message_id: message.id,
+                sent_to: message.parent_chatroom_id,
+                message_owner_id: message.owner_user_id,
+                replying_to_msg_id: message.replying_to_msg,
+                date_issued: message.send_date,
+                raw_message: message.raw_message,
+            }]
         }
-    }
+    };
+
+    Ok(Json(FetchMessagesResponse {
+        messages: requested_messages,
+    }))
 }
