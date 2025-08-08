@@ -107,7 +107,7 @@ impl Into<WebSocketChatroomMessageClient> for ChatroomMessageResponse {
     }
 }
 
-use std::mem::{size_of, align_of};
+use std::mem::{align_of, size_of};
 
 /// Cast a `Vec<T>` into a `Vec<U>` without copying.
 ///
@@ -124,12 +124,10 @@ pub unsafe fn vec_cast<T, U>(mut v: Vec<T>) -> Vec<U> {
             panic!("Alignment mismatch between types");
         }
     }
-    
+
     let ptr = v.as_mut_ptr() as *mut U;
     let len = v.len();
     let cap = v.capacity();
     std::mem::forget(v);
-    unsafe {
-        Vec::from_raw_parts(ptr, len, cap)
-    }
+    unsafe { Vec::from_raw_parts(ptr, len, cap) }
 }

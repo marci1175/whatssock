@@ -506,74 +506,84 @@ pub fn MainPage() -> Element {
                     }},
 
                     if let Some(currently_selected_chatroom_node) = currently_selected_chatroom_node.read().clone() {
-                        for chatroom_msg in cached_chat_messages.read().get(&currently_selected_chatroom_node.chatroom_uid).unwrap() {
-                            div {
-                                id: "message_node",
-                                // Display who sent the message
-                                {
-                                    rsx!(
-                                        div {
-                                            id: "message_author",
+                        {
+                            let chatroom_msgs_read = cached_chat_messages.read();
+                            let chatroom_msgs = chatroom_msgs_read.get(&currently_selected_chatroom_node.chatroom_uid).unwrap();
 
-                                            title: {
-                                                format!("User ID: {}", chatroom_msg.message_owner_id)
-                                            },
-
-                                            {
-                                                let message_owner_id = chatroom_msg.message_owner_id;
-
-                                                match get_or_request_user_information(users_cache, user_requester_sender.clone(), message_owner_id) {
-                                                    Some(user_information) => {
-                                                        if message_owner_id == user_session.user_id {
-                                                            String::from("Me")
-                                                        }
-                                                        else {
-                                                            user_information.username.clone()
-                                                        }
-                                                    },
-                                                    None => {
-                                                        // Display loading title
-                                                        String::from("loading...")
-                                                    },
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-
-                                // Display the message itself
-                                {
-                                    rsx!(
-                                        div {
-                                            id: "message_content",
-                                            match &chatroom_msg.message {
-                                                WebSocketChatroomMessages::StringMessage(message) => {
-                                                    rsx!(
-                                                        div {
-                                                            id: "string_message",
-
-                                                            { message.to_string() }
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-
-                                // Display the date it was sent
-                                {
-                                    rsx!(
-                                        div {
-                                            id: "message_date",
-
-                                            { chatroom_msg.date_issued.to_string() }
-                                        }
-                                    )
-                                }
+                            if chatroom_msgs.is_empty() {
+                                chatroom_message_requester_sender.send(MessageFetchType::BulkFromChatroom(BulkChatroomMsgRequest { chatroom_uid: currently_selected_chatroom_node.chatroom_uid, count: 10, offset_id: 0 }));
                             }
-                        }
-                    }
+
+                            rsx!(
+                                for chatroom_msg in chatroom_msgs {
+                                    div {
+                                        id: "message_node",
+                                        // Display who sent the message
+                                        {
+                                            rsx!(
+                                                div {
+                                                    id: "message_author",
+
+                                                    title: {
+                                                        format!("User ID: {}", chatroom_msg.message_owner_id)
+                                                    },
+
+                                                    {
+                                                        let message_owner_id = chatroom_msg.message_owner_id;
+
+                                                        match get_or_request_user_information(users_cache, user_requester_sender.clone(), message_owner_id) {
+                                                            Some(user_information) => {
+                                                                if message_owner_id == user_session.user_id {
+                                                                    String::from("Me")
+                                                                }
+                                                                else {
+                                                                    user_information.username.clone()
+                                                                }
+                                                            },
+                                                            None => {
+                                                                // Display loading title
+                                                                String::from("loading...")
+                                                            },
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+
+                                        // Display the message itself
+                                        {
+                                            rsx!(
+                                                div {
+                                                    id: "message_content",
+                                                    match &chatroom_msg.message {
+                                                        WebSocketChatroomMessages::StringMessage(message) => {
+                                                            rsx!(
+                                                                div {
+                                                                    id: "string_message",
+
+                                                                    { message.to_string() }
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+
+                                        // Display the date it was sent
+                                        {
+                                            rsx!(
+                                                div {
+                                                    id: "message_date",
+
+                                                    { chatroom_msg.date_issued.to_string() }
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                        }}
                 }
 
                 // Bottompanel
