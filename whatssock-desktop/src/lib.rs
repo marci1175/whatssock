@@ -93,3 +93,9 @@ pub struct ApplicationContext {
     pub websocket_client_out: Sender<WebSocketChatroomMessageServer>,
     pub websocket_client_in: Arc<Mutex<Receiver<Message>>>,
 }
+
+#[derive(Clone, Debug)]
+pub enum RequestQueueState {
+    Requested,
+    NotRequested,
+}

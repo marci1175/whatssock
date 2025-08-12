@@ -58,17 +58,24 @@ pub struct UserLookup {
     pub username: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy)]
-pub struct BulkChatroomMsgRequest {
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy, Hash, PartialEq, Eq)]
+pub struct BulkMessagesFromId {
     pub chatroom_uid: i32,
     pub count: i32,
     pub offset_id: i32,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy, Hash, PartialEq, Eq)]
+pub struct BulkMessagesFromLatest {
+    pub chatroom_uid: i32,
+    pub count: i32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize, Copy, Hash, PartialEq, Eq)]
 pub enum MessageFetchType {
-    BulkFromChatroom(BulkChatroomMsgRequest),
+    NextFromId(BulkMessagesFromId),
     SingluarFromId(i32),
+    NextFromLatest(BulkMessagesFromLatest),
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]

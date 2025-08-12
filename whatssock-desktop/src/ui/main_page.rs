@@ -1,16 +1,20 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     rc::Rc,
     sync::Arc,
 };
 
+use dashmap::DashMap;
 use dioxus::{prelude::*, web::WebEventExt};
 use dioxus_toast::{ToastInfo, ToastManager};
 use futures_util::StreamExt;
 use parking_lot::Mutex;
 use tokio::{
     select,
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Notify,
+    },
 };
 use tokio_tungstenite::tungstenite::Message;
 use web_sys::{
@@ -20,12 +24,12 @@ use web_sys::{
 use whatssock_lib::{
     client::{UserInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
-    BulkChatroomMsgRequest, ChatroomMessageResponse, FetchChatroomResponse,
+    BulkMessagesFromId, BulkMessagesFromLatest, ChatroomMessageResponse, FetchChatroomResponse,
     FetchKnownChatroomResponse, FetchMessagesResponse, MessageFetchType, UserLookup, UserSession,
     WebSocketChatroomMessages,
 };
 
-use crate::{ApplicationContext, AuthHttpClient, HttpClient, Route};
+use crate::{ApplicationContext, AuthHttpClient, HttpClient, RequestQueueState, Route};
 
 #[component]
 pub fn MainPage() -> Element {
@@ -164,30 +168,85 @@ pub fn MainPage() -> Element {
     let chatroom_message_requester_sender = Arc::new(use_coroutine(
         move |mut receiver: UnboundedReceiver<MessageFetchType>| {
             let http_client = user_requester_client.clone();
+            let outgoing_request_map: Arc<DashMap<MessageFetchType, Mutex<RequestQueueState>>> =
+                Arc::new(DashMap::new());
+            let outgoing_request_map_clone = outgoing_request_map.clone();
+            let new_incoming_message = Arc::new(Notify::new());
+            let new_incoming_message_clone = new_incoming_message.clone();
+
+            spawn(async move {
+                let outgoing_request_map_clone = outgoing_request_map_clone.clone();
+                loop {
+                    new_incoming_message_clone.notified().await;
+
+                    for request in outgoing_request_map_clone.iter() {
+                        let http_client = http_client.clone();
+
+                        let mut value = request.value().lock();
+                        let outgoing_request = request.key().clone();
+                        match value.clone() {
+                            RequestQueueState::Requested => {}
+                            RequestQueueState::NotRequested => {
+                                *value = RequestQueueState::Requested;
+
+                                // Spawn a fetch requester
+                                spawn(async move {
+                                    let fetch_response =
+                                        http_client.fetch_messages(outgoing_request).await.unwrap();
+
+                                    let messages_fetched =
+                                        serde_json::from_str::<FetchMessagesResponse>(
+                                            &fetch_response.text().await.unwrap(),
+                                        )
+                                        .unwrap();
+
+                                    let mut cached_msgs = cached_chat_messages.write();
+
+                                    match outgoing_request {
+                                        MessageFetchType::NextFromId(bulk_chatroom_msg_request) => {
+                                            // We can safely unwrap here afaik
+                                            let msg_list = cached_msgs
+                                                .get_mut(&bulk_chatroom_msg_request.chatroom_uid)
+                                                .unwrap();
+
+                                            for incoming_msg in messages_fetched.messages {
+                                                msg_list.push_front(incoming_msg.into());
+                                            }
+                                        }
+                                        MessageFetchType::SingluarFromId(_) => {
+                                            let msg = &messages_fetched.messages[0];
+                                            chatroom_last_messages_cache
+                                                .write()
+                                                .insert(msg.message_id, dbg!(msg.clone()));
+                                        }
+                                        MessageFetchType::NextFromLatest(
+                                            bulk_chatroom_msg_request,
+                                        ) => {
+                                            // We can safely unwrap here afaik
+                                            let msg_list = cached_msgs
+                                                .get_mut(&bulk_chatroom_msg_request.chatroom_uid)
+                                                .unwrap();
+
+                                            for incoming_msg in messages_fetched.messages {
+                                                msg_list.push_front(incoming_msg.into());
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            });
 
             async move {
                 loop {
                     select! {
                         Some(message_ftch) = receiver.next() => {
-                            let fetch_response = http_client.fetch_messages(message_ftch).await.unwrap();
+                            if outgoing_request_map.get(&message_ftch).is_none() {
+                                outgoing_request_map.insert(message_ftch, Mutex::new(RequestQueueState::NotRequested));
 
-                            let messages_fetched = serde_json::from_str::<FetchMessagesResponse>(&fetch_response.text().await.unwrap()).unwrap();
-
-                            match message_ftch {
-                                MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
-                                    let mut cached_msgs = cached_chat_messages.write();
-
-                                    // We can safely unwrap here afaik
-                                    let msg_list = cached_msgs.get_mut(&bulk_chatroom_msg_request.chatroom_uid).unwrap();
-
-                                    for incoming_msg in messages_fetched.messages {
-                                        msg_list.push_front(incoming_msg.into());
-                                    }
-                                },
-                                MessageFetchType::SingluarFromId(_) => {
-                                    let msg = &messages_fetched.messages[0];
-                                    chatroom_last_messages_cache.write().insert(dbg!(msg.message_id), msg.clone());
-                                },
+                                new_incoming_message.notify_waiters();
                             }
                         }
                         else => {
@@ -214,7 +273,9 @@ pub fn MainPage() -> Element {
                     class: "title",
                     "Current Messages"
                 }
-
+                {
+                    display_loading_svg()
+                }
                 div {
                     id: "chatroom_node_list",
 
@@ -261,53 +322,56 @@ pub fn MainPage() -> Element {
                                                                 div {
                                                                     id: "chatroom_last_message",
                                                                     {
-                                                                        let username = match get_or_request_user_information(users_cache, user_requester_sender.clone(), last_msg.message_owner_id) {
-                                                                                Some(user_lookup) => {
-                                                                                    user_lookup.username
-                                                                                },
-                                                                                None => {
-                                                                                    String::from("Loading...")
-                                                                                },
-                                                                            };
+                                                                        let user_info = get_or_request_user_information(users_cache, user_requester_sender.clone(), last_msg.message_owner_id);
 
                                                                         // We can safely unwrap here
                                                                         let message_type = rmp_serde::from_slice::<WebSocketChatroomMessages>(&last_msg.raw_message).unwrap();
 
-                                                                        match message_type {
-                                                                            WebSocketChatroomMessages::StringMessage(message) => {
-                                                                                rsx!(
-                                                                                    div {
-                                                                                        id: "chatroom_last_message",
+                                                                        // We should only display the last message if we know who wrote it else we just display the loading svg
+                                                                        if let Some(info) = user_info {
+                                                                            let username = info.username;
 
+                                                                            match message_type {
+                                                                                WebSocketChatroomMessages::StringMessage(message) => {
+                                                                                    rsx!(
                                                                                         div {
-                                                                                            id: {
-                                                                                                if username.clone() == user_information.username.clone() {
-                                                                                                    "chatroom_last_message_name_owned"
-                                                                                                }
-                                                                                                else {
-                                                                                                    "chatroom_last_message_name"
-                                                                                                }
-                                                                                            },
+                                                                                            id: "chatroom_last_message",
 
-                                                                                            {
-                                                                                                if username.clone() == user_information.username.clone() {
-                                                                                                    "Me"
-                                                                                                }
-                                                                                                else {
-                                                                                                    &username
+                                                                                            div {
+                                                                                                id: {
+                                                                                                    if username.clone() == user_information.username.clone() {
+                                                                                                        "chatroom_last_message_name_owned"
+                                                                                                    }
+                                                                                                    else {
+                                                                                                        "chatroom_last_message_name"
+                                                                                                    }
+                                                                                                },
+
+                                                                                                {
+                                                                                                    if username.clone() == user_information.username.clone() {
+                                                                                                        "Me"
+                                                                                                    }
+                                                                                                    else {
+                                                                                                        &username
+                                                                                                    }
                                                                                                 }
                                                                                             }
-                                                                                        }
 
-                                                                                        div {
-                                                                                            id: "chatroom_last_message_body",
+                                                                                            div {
+                                                                                                id: "chatroom_last_message_body",
 
-                                                                                            { message }
+                                                                                                { message }
+                                                                                            }
                                                                                         }
-                                                                                    }
-                                                                                )
-                                                                            },
+                                                                                    )
+                                                                                },
+                                                                            }
                                                                         }
+                                                                        else {
+                                                                            display_loading_svg()
+                                                                        }
+
+
                                                                     }
                                                                 }
                                                             )
@@ -493,97 +557,108 @@ pub fn MainPage() -> Element {
             div {
                 class: "chatpanel",
 
-                div {
-                    id: "chats",
-                    onscroll: move |_: Event<ScrollData>| {let chatroom_message_requester_sender = chatroom_message_requester_sender.clone(); async move {
-                        // Get how much we have scrolled
-                        let scroll_top = document::eval("return chats.scrollTop").await.unwrap().to_string().parse::<i32>().unwrap();
 
-                        // Request more messages to display from the server if the scroll is 0
-                        if scroll_top == 0 {
-                            chatroom_message_requester_sender.send(MessageFetchType::BulkFromChatroom(BulkChatroomMsgRequest { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().get(0).unwrap().message_id }));
-                        }
-                    }},
 
-                    if let Some(currently_selected_chatroom_node) = currently_selected_chatroom_node.read().clone() {
-                        {
-                            let chatroom_msgs_read = cached_chat_messages.read();
-                            let chatroom_msgs = chatroom_msgs_read.get(&currently_selected_chatroom_node.chatroom_uid).unwrap();
+                {
+                    rsx!{
+                        div {
+                            id: "chats",
+                            onscroll: move |_: Event<ScrollData>| {let chatroom_message_requester_sender = chatroom_message_requester_sender.clone(); async move {
+                                // Get how much we have scrolled
+                                let scroll_top = document::eval("return chats.scrollTop").await.unwrap().to_string().parse::<i32>().unwrap();
 
-                            if chatroom_msgs.is_empty() {
-                                chatroom_message_requester_sender.send(MessageFetchType::BulkFromChatroom(BulkChatroomMsgRequest { chatroom_uid: currently_selected_chatroom_node.chatroom_uid, count: 10, offset_id: 0 }));
-                            }
-
-                            rsx!(
-                                for chatroom_msg in chatroom_msgs {
-                                    div {
-                                        id: "message_node",
-                                        // Display who sent the message
-                                        {
-                                            rsx!(
-                                                div {
-                                                    id: "message_author",
-
-                                                    title: {
-                                                        format!("User ID: {}", chatroom_msg.message_owner_id)
-                                                    },
-
-                                                    {
-                                                        let message_owner_id = chatroom_msg.message_owner_id;
-
-                                                        match get_or_request_user_information(users_cache, user_requester_sender.clone(), message_owner_id) {
-                                                            Some(user_information) => {
-                                                                if message_owner_id == user_session.user_id {
-                                                                    String::from("Me")
-                                                                }
-                                                                else {
-                                                                    user_information.username.clone()
-                                                                }
-                                                            },
-                                                            None => {
-                                                                // Display loading title
-                                                                String::from("loading...")
-                                                            },
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                        }
-
-                                        // Display the message itself
-                                        {
-                                            rsx!(
-                                                div {
-                                                    id: "message_content",
-                                                    match &chatroom_msg.message {
-                                                        WebSocketChatroomMessages::StringMessage(message) => {
-                                                            rsx!(
-                                                                div {
-                                                                    id: "string_message",
-
-                                                                    { message.to_string() }
-                                                                }
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                        }
-
-                                        // Display the date it was sent
-                                        {
-                                            rsx!(
-                                                div {
-                                                    id: "message_date",
-
-                                                    { chatroom_msg.date_issued.to_string() }
-                                                }
-                                            )
-                                        }
-                                    }
+                                // Request more messages to display from the server if the scroll is 0
+                                if scroll_top == 0 {
+                                    chatroom_message_requester_sender.send(MessageFetchType::NextFromId(BulkMessagesFromId { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().get(0).unwrap().message_id }));
                                 }
-                            )
-                        }}
+                            }},
+
+                            if let Some(currently_selected_chatroom_node) = currently_selected_chatroom_node.read().clone() {
+                                {
+                                    let chatroom_msgs_read = cached_chat_messages.read();
+                                    let chatroom_msgs = chatroom_msgs_read.get(&currently_selected_chatroom_node.chatroom_uid).unwrap();
+
+                                    if chatroom_msgs.is_empty() {
+                                        chatroom_message_requester_sender.send(MessageFetchType::NextFromLatest(BulkMessagesFromLatest { chatroom_uid: currently_selected_chatroom_node.chatroom_uid, count: 20}));
+                                    }
+
+                                    rsx!(
+                                        for chatroom_msg in chatroom_msgs {
+                                            div {
+                                                id: "message_node",
+                                                // Display who sent the message
+                                                {
+                                                    rsx!(
+                                                        div {
+                                                            id: "message_author",
+
+                                                            title: {
+                                                                format!("User ID: {}", chatroom_msg.message_owner_id)
+                                                            },
+
+                                                            {
+                                                                let message_owner_id = chatroom_msg.message_owner_id;
+
+                                                                match get_or_request_user_information(users_cache, user_requester_sender.clone(), message_owner_id) {
+                                                                    Some(user_information) => {
+                                                                        rsx!(
+                                                                            {
+                                                                                if message_owner_id == user_session.user_id {
+                                                                                    String::from("Me")
+                                                                                }
+                                                                                else {
+                                                                                    user_information.username.clone()
+                                                                                }
+                                                                            }
+                                                                        )
+                                                                    },
+                                                                    None => {
+                                                                        // Display loading title
+                                                                        display_loading_svg()
+                                                                    },
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
+
+                                                // Display the message itself
+                                                {
+                                                    rsx!(
+                                                        div {
+                                                            id: "message_content",
+                                                            match &chatroom_msg.message {
+                                                                WebSocketChatroomMessages::StringMessage(message) => {
+                                                                    rsx!(
+                                                                        div {
+                                                                            id: "string_message",
+
+                                                                            { message.to_string() }
+                                                                        }
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    )
+                                                }
+
+                                                // Display the date it was sent
+                                                {
+                                                    rsx!(
+                                                        div {
+                                                            id: "message_date",
+
+                                                            { chatroom_msg.date_issued.to_string() }
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Bottompanel
@@ -664,9 +739,15 @@ pub fn get_or_request_message_from_id(
     match last_message_cache.read().get(&msg_id) {
         Some(last_message) => Some(last_message.clone()),
         None => {
-            message_requester_sender.send(MessageFetchType::SingluarFromId(msg_id));
+            message_requester_sender.send(MessageFetchType::SingluarFromId(dbg!(msg_id)));
 
             None
         }
     }
+}
+
+pub fn display_loading_svg() -> Element {
+    rsx!(div {
+        id: "loading_animation",
+    })
 }

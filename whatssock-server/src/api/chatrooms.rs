@@ -340,7 +340,7 @@ pub async fn fetch_messages(
         })?;
 
     let requested_messages = match fetch_messages_request.message_request {
-        whatssock_lib::MessageFetchType::BulkFromChatroom(bulk_chatroom_msg_request) => {
+        whatssock_lib::MessageFetchType::NextFromId(bulk_chatroom_msg_request) => {
             // Check for user request size
             if bulk_chatroom_msg_request.count == 0 || bulk_chatroom_msg_request.count > 255 {
                 warn!(
@@ -350,18 +350,6 @@ pub async fn fetch_messages(
 
                 return Err(StatusCode::PAYLOAD_TOO_LARGE);
             }
-
-            let bulk_msg_request = messages
-                .filter(schema::messages::id.gt(bulk_chatroom_msg_request.offset_id)) // only rows after the given id
-                .filter(parent_chatroom_id.eq(bulk_chatroom_msg_request.chatroom_uid)) // match attribute
-                .order(schema::messages::id.asc()) // make sure we get the "next" ones
-                .limit(bulk_chatroom_msg_request.count.into())
-                .load::<MessageEntry>(&mut pg_connection)
-                .map_err(|err| {
-                    error!("An error occured while fetching messages from db: {}", err);
-
-                    StatusCode::INTERNAL_SERVER_ERROR
-                })?;
 
             // Check if the user's session exists
             if !user_account
@@ -376,9 +364,27 @@ pub async fn fetch_messages(
                 return Err(StatusCode::UNAUTHORIZED);
             }
 
+            // Create the DB query
+            let bulk_msg_request = messages
+                .filter(schema::messages::id.lt(bulk_chatroom_msg_request.offset_id)) // only rows after the given id
+                .filter(parent_chatroom_id.eq(bulk_chatroom_msg_request.chatroom_uid)) // match attribute
+                .order(schema::messages::id.asc()) // make sure we get the "next" ones
+                .limit(bulk_chatroom_msg_request.count.into())
+                .load::<MessageEntry>(&mut pg_connection)
+                .map_err(|err| {
+                    error!("An error occured while fetching messages from db: {}", err);
+
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+
+            for req in &bulk_msg_request {
+                dbg!(req.id);
+            }
+
             // Casting magic
             // If this crashes please check function implmentation in the lib
             // I love unsafe code bleeeeeeh
+            // Amen
             unsafe { vec_cast(bulk_msg_request) }
         }
         whatssock_lib::MessageFetchType::SingluarFromId(message_id) => {
@@ -414,6 +420,31 @@ pub async fn fetch_messages(
                 date_issued: message.send_date,
                 raw_message: message.raw_message,
             }]
+        }
+        whatssock_lib::MessageFetchType::NextFromLatest(bulk_chatroom_msg_request) => {
+            // Check for user request size
+            if bulk_chatroom_msg_request.count == 0 || bulk_chatroom_msg_request.count > 255 {
+                warn!(
+                    "The user has tried to request: `{}` amount of messages, which is invalid.",
+                    bulk_chatroom_msg_request.count
+                );
+
+                return Err(StatusCode::PAYLOAD_TOO_LARGE);
+            }
+
+            let bulk_msg_request = messages
+                .filter(parent_chatroom_id.eq(bulk_chatroom_msg_request.chatroom_uid)) // match attribute
+                .order(schema::messages::id.desc()) // make sure we get the "next" ones
+                .limit(bulk_chatroom_msg_request.count.into())
+                .load::<MessageEntry>(&mut pg_connection)
+                .map_err(|err| {
+                    error!("An error occured while fetching messages from db: {}", err);
+
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            
+            // Amen
+            unsafe { vec_cast(bulk_msg_request) }
         }
     };
 

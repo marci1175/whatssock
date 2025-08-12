@@ -27,6 +27,7 @@ tokio = {version = "1.46.1", features = ["full"]}
 futures-util = "0.3.31"
 indexmap = "2.10.0"
 web-sys = {version = "0.3.77", features = ["Element"]}
+dashmap = "6.1.0"
 
 [features]
 default = ["desktop"]
