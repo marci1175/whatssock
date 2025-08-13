@@ -57,8 +57,12 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 return;
             };
 
-            let currently_available_chatroom_handlers: Arc<DashMap<i32, (CancellationToken, Sender<Message>)>> = state.currently_online_chatrooms.clone();
-            let chatroom_subscriptions_handle: Arc<DashMap<i32, DashMap<i32, mpsc::Sender<Message>>>> = state.chatroom_subscriptions.clone();
+            let currently_available_chatroom_handlers: Arc<
+                DashMap<i32, (CancellationToken, Sender<Message>)>,
+            > = state.currently_online_chatrooms.clone();
+            let chatroom_subscriptions_handle: Arc<
+                DashMap<i32, DashMap<i32, mpsc::Sender<Message>>>,
+            > = state.chatroom_subscriptions.clone();
 
             let mut joined_chatroom_ids = Vec::new();
 
@@ -69,7 +73,7 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                     for joined_chatroom in joined_chatrooms {
                         // We can safely unwrap here, the option is just a weird trait of diesel
                         let chatroom_id = joined_chatroom.unwrap();
-                        
+
                         // Store the user's joined classrooms'
                         joined_chatroom_ids.push(chatroom_id);
 
@@ -103,13 +107,21 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 }
             }
 
-            let curr_open_conn: Arc<dashmap::DashSet<SocketAddr>> = state.currently_open_connections.clone();
+            let curr_open_conn: Arc<dashmap::DashSet<SocketAddr>> =
+                state.currently_open_connections.clone();
             let curr_open_conn_clone = curr_open_conn.clone();
 
             // Dont allow multiple ws connections from the same address
             if !curr_open_conn.insert(remote_addr) {
                 error!("Remote: {remote_addr} tried to open two or more connections.");
-                disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+                disconnect_user_from_server(
+                    joined_chatroom_ids,
+                    user_session.user_id,
+                    remote_addr,
+                    chatroom_subscriptions_handle.clone(),
+                    currently_available_chatroom_handlers.clone(),
+                    curr_open_conn.clone(),
+                );
                 return;
             };
 
@@ -141,7 +153,14 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                                     ws_msg.message_owner_session.user_id
                                 );
 
-                                disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+                                disconnect_user_from_server(
+                                    joined_chatroom_ids,
+                                    user_session.user_id,
+                                    remote_addr,
+                                    chatroom_subscriptions_handle.clone(),
+                                    currently_available_chatroom_handlers.clone(),
+                                    curr_open_conn.clone(),
+                                );
 
                                 break;
                             }
@@ -154,9 +173,19 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                         {
                             sender_handle.1.clone()
                         } else {
-                            error!("A user tried to send a message to a chatroom: `{}` which has been closed.", ws_msg.sent_to);
+                            error!(
+                                "A user tried to send a message to a chatroom: `{}` which has been closed.",
+                                ws_msg.sent_to
+                            );
 
-                            disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+                            disconnect_user_from_server(
+                                joined_chatroom_ids,
+                                user_session.user_id,
+                                remote_addr,
+                                chatroom_subscriptions_handle.clone(),
+                                currently_available_chatroom_handlers.clone(),
+                                curr_open_conn.clone(),
+                            );
 
                             break;
                         };
@@ -166,10 +195,17 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                                 rmp_serde::to_vec(&relayed_message).unwrap().into(),
                             ))
                             .unwrap();
-                    } 
+                    }
                     // client disconnected
                     else {
-                        disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+                        disconnect_user_from_server(
+                            joined_chatroom_ids,
+                            user_session.user_id,
+                            remote_addr,
+                            chatroom_subscriptions_handle.clone(),
+                            currently_available_chatroom_handlers.clone(),
+                            curr_open_conn.clone(),
+                        );
 
                         break;
                     };
@@ -223,29 +259,36 @@ pub fn disconnect_user_from_server(
         DashMap<i32, DashMap<i32, tokio::sync::mpsc::Sender<axum::extract::ws::Message>>>,
     >,
     available_chatrooms_handle: Arc<DashMap<i32, (CancellationToken, Sender<Message>)>>,
-    curr_open_conn: Arc<dashmap::DashSet<SocketAddr>>
+    curr_open_conn: Arc<dashmap::DashSet<SocketAddr>>,
 ) {
+    // Remove the user's remote address from the open addresses.
     curr_open_conn.remove(&remote_addr);
 
+    // Disconnect the user from every one of the chatrooms they're present in.
     for chatroom_id in chatroom_ids {
         match chatroom_subscriptions.get_mut(&chatroom_id) {
             Some(mut handler) => {
                 let websocket_list = handler.value_mut();
 
+                // Disconnect the user from the websockets' list
                 websocket_list.remove(&user_id);
 
                 if websocket_list.is_empty() {
                     // We can unwrap here because if it didnt exist it wouldve been caught already
-                    let (_, (handler_cancel_token, _)) = available_chatrooms_handle.remove(&chatroom_id).unwrap();
-                    
+                    let (_, (handler_cancel_token, _)) =
+                        available_chatrooms_handle.remove(&chatroom_id).unwrap();
+
                     // Cancel handler
                     handler_cancel_token.cancel();
 
+                    // Log in console
                     info!("Removing chatroom: {chatroom_id} as there are no participants left.");
                 }
             }
             None => {
-                error!("Tried to unsubscribe from a non-existent chatroom handler. id: {chatroom_id}");
+                error!(
+                    "Tried to unsubscribe from a non-existent chatroom handler. id: {chatroom_id}"
+                );
             }
         }
     }

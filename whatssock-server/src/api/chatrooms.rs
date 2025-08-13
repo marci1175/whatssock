@@ -442,7 +442,7 @@ pub async fn fetch_messages(
 
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
-            
+
             // Amen
             unsafe { vec_cast(bulk_msg_request) }
         }

@@ -99,17 +99,17 @@ pub struct ChatroomMessageResponse {
     pub date_issued: NaiveDateTime,
 }
 
-impl Into<WebSocketChatroomMessageClient> for ChatroomMessageResponse {
-    fn into(self) -> WebSocketChatroomMessageClient {
+impl From<ChatroomMessageResponse> for WebSocketChatroomMessageClient {
+    fn from(val: ChatroomMessageResponse) -> Self {
         WebSocketChatroomMessageClient {
-            message_id: self.message_id,
-            message_owner_id: self.message_owner_id,
-            replying_to_msg_id: self.replying_to_msg_id,
-            sent_to: self.sent_to,
+            message_id: val.message_id,
+            message_owner_id: val.message_owner_id,
+            replying_to_msg_id: val.replying_to_msg_id,
+            sent_to: val.sent_to,
             message: {
-                rmp_serde::from_slice::<WebSocketChatroomMessages>(&self.raw_message).expect("Raw message bytes from `ChatroomMessageResponse` cannot be converted into a valid `WebSocketChatroomMessages` type.")
+                rmp_serde::from_slice::<WebSocketChatroomMessages>(&val.raw_message).expect("Raw message bytes from `ChatroomMessageResponse` cannot be converted into a valid `WebSocketChatroomMessages` type.")
             },
-            date_issued: self.date_issued,
+            date_issued: val.date_issued,
         }
     }
 }

@@ -1,11 +1,10 @@
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    rc::Rc,
+    collections::{HashMap, VecDeque},
     sync::Arc,
 };
 
 use dashmap::DashMap;
-use dioxus::{prelude::*, web::WebEventExt};
+use dioxus::prelude::*;
 use dioxus_toast::{ToastInfo, ToastManager};
 use futures_util::StreamExt;
 use parking_lot::Mutex;
@@ -17,10 +16,6 @@ use tokio::{
     },
 };
 use tokio_tungstenite::tungstenite::Message;
-use web_sys::{
-    js_sys::{eval, global},
-    wasm_bindgen::convert::ReturnWasmAbi,
-};
 use whatssock_lib::{
     client::{UserInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
@@ -168,8 +163,9 @@ pub fn MainPage() -> Element {
     let chatroom_message_requester_sender = Arc::new(use_coroutine(
         move |mut receiver: UnboundedReceiver<MessageFetchType>| {
             let http_client = user_requester_client.clone();
-            let outgoing_request_map: Arc<DashMap<MessageFetchType, Arc<Mutex<RequestQueueState>>>> =
-                Arc::new(DashMap::new());
+            let outgoing_request_map: Arc<
+                DashMap<MessageFetchType, Arc<Mutex<RequestQueueState>>>,
+            > = Arc::new(DashMap::new());
             let outgoing_request_map_clone = outgoing_request_map.clone();
             let new_incoming_message = Arc::new(Notify::new());
             let new_incoming_message_clone = new_incoming_message.clone();
@@ -183,17 +179,13 @@ pub fn MainPage() -> Element {
 
                         let value = request_queue_state.clone();
                         let value_clone = value.clone();
-                        let outgoing_request = outgoing_request.clone();
-                        
+                        let outgoing_request = *outgoing_request;
+
                         let queue_state = (*value_clone.lock()).clone();
 
                         match queue_state {
-                            RequestQueueState::Requested => {
-                                true
-                            }
-                            RequestQueueState::Completed => {
-                                false
-                            }
+                            RequestQueueState::Requested => true,
+                            RequestQueueState::Completed => false,
                             RequestQueueState::NotRequested => {
                                 // Spawn a fetch requester
                                 spawn(async move {
@@ -581,7 +573,7 @@ pub fn MainPage() -> Element {
 
                                 // Request more messages to display from the server if the scroll is 0
                                 if scroll_top == 0 {
-                                    chatroom_message_requester_sender.send(MessageFetchType::NextFromId(BulkMessagesFromId { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().get(0).unwrap().message_id }));
+                                    chatroom_message_requester_sender.send(MessageFetchType::NextFromId(BulkMessagesFromId { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().front().unwrap().message_id }));
                                 }
                             }},
 
