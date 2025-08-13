@@ -168,7 +168,7 @@ pub fn MainPage() -> Element {
     let chatroom_message_requester_sender = Arc::new(use_coroutine(
         move |mut receiver: UnboundedReceiver<MessageFetchType>| {
             let http_client = user_requester_client.clone();
-            let outgoing_request_map: Arc<DashMap<MessageFetchType, Mutex<RequestQueueState>>> =
+            let outgoing_request_map: Arc<DashMap<MessageFetchType, Arc<Mutex<RequestQueueState>>>> =
                 Arc::new(DashMap::new());
             let outgoing_request_map_clone = outgoing_request_map.clone();
             let new_incoming_message = Arc::new(Notify::new());
@@ -178,19 +178,27 @@ pub fn MainPage() -> Element {
                 let outgoing_request_map_clone = outgoing_request_map_clone.clone();
                 loop {
                     new_incoming_message_clone.notified().await;
-
-                    for request in outgoing_request_map_clone.iter() {
+                    outgoing_request_map_clone.retain(|outgoing_request, request_queue_state| {
                         let http_client = http_client.clone();
 
-                        let mut value = request.value().lock();
-                        let outgoing_request = request.key().clone();
-                        match value.clone() {
-                            RequestQueueState::Requested => {}
-                            RequestQueueState::NotRequested => {
-                                *value = RequestQueueState::Requested;
+                        let value = request_queue_state.clone();
+                        let value_clone = value.clone();
+                        let outgoing_request = outgoing_request.clone();
+                        
+                        let queue_state = (*value_clone.lock()).clone();
 
+                        match queue_state {
+                            RequestQueueState::Requested => {
+                                true
+                            }
+                            RequestQueueState::Completed => {
+                                false
+                            }
+                            RequestQueueState::NotRequested => {
                                 // Spawn a fetch requester
                                 spawn(async move {
+                                    *value.lock() = RequestQueueState::Requested;
+
                                     let fetch_response =
                                         http_client.fetch_messages(outgoing_request).await.unwrap();
 
@@ -231,11 +239,15 @@ pub fn MainPage() -> Element {
                                                 msg_list.push_front(incoming_msg.into());
                                             }
                                         }
-                                    }
+                                    };
+
+                                    *value.lock() = RequestQueueState::Completed;
                                 });
+
+                                false
                             }
                         }
-                    }
+                    });
                 }
             });
 
@@ -244,7 +256,7 @@ pub fn MainPage() -> Element {
                     select! {
                         Some(message_ftch) = receiver.next() => {
                             if outgoing_request_map.get(&message_ftch).is_none() {
-                                outgoing_request_map.insert(message_ftch, Mutex::new(RequestQueueState::NotRequested));
+                                outgoing_request_map.insert(message_ftch, Arc::new(Mutex::new(RequestQueueState::NotRequested)));
 
                                 new_incoming_message.notify_waiters();
                             }

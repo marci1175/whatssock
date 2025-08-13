@@ -57,8 +57,10 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 return;
             };
 
-            let currently_available_chatroom_handlers = state.currently_online_chatrooms.clone();
-            let chatroom_subscriptions_handle = state.chatroom_subscriptions.clone();
+            let currently_available_chatroom_handlers: Arc<DashMap<i32, (CancellationToken, Sender<Message>)>> = state.currently_online_chatrooms.clone();
+            let chatroom_subscriptions_handle: Arc<DashMap<i32, DashMap<i32, mpsc::Sender<Message>>>> = state.chatroom_subscriptions.clone();
+
+            let mut joined_chatroom_ids = Vec::new();
 
             // Get which chatrooms the user is present in
             match lookup_joined_chatrooms(&mut pg_connection, user_session.user_id) {
@@ -67,6 +69,9 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                     for joined_chatroom in joined_chatrooms {
                         // We can safely unwrap here, the option is just a weird trait of diesel
                         let chatroom_id = joined_chatroom.unwrap();
+                        
+                        // Store the user's joined classrooms'
+                        joined_chatroom_ids.push(chatroom_id);
 
                         if currently_available_chatroom_handlers
                             .get(&chatroom_id)
@@ -92,84 +97,82 @@ pub async fn handle_socket(state: State<ServerState>, socket: WebSocket, remote_
                 Err(err) => {
                     error!(
                         "An error occured when trying to fetch which chatrooms the user was present in: {err}"
-                    )
+                    );
+
+                    return;
                 }
             }
 
-            let curr_open_conn = state.currently_open_connections.clone();
+            let curr_open_conn: Arc<dashmap::DashSet<SocketAddr>> = state.currently_open_connections.clone();
             let curr_open_conn_clone = curr_open_conn.clone();
 
             // Dont allow multiple ws connections from the same address
             if !curr_open_conn.insert(remote_addr) {
                 error!("Remote: {remote_addr} tried to open two or more connections.");
-                curr_open_conn.remove(&remote_addr);
+                disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
                 return;
             };
 
             // Spawn client receiver thread
             spawn(async move {
-                loop {
-                    while let Some(msg) = reader.next().await {
-                        if let Ok(msg) = msg {
-                            // All of the messages we send over are in data format
-                            // They are serialized via rmp_serde
-                            // All messages will have the type [`WebSocketChatroomMessage`]
-                            let msg_bytes = msg.into_data();
+                while let Some(msg) = reader.next().await {
+                    if let Ok(msg) = msg {
+                        // All of the messages we send over are in data format
+                        // They are serialized via rmp_serde
+                        // All messages will have the type [`WebSocketChatroomMessage`]
+                        let msg_bytes = msg.into_data();
 
-                            // We can safely unwrap here
-                            let ws_msg =
-                                rmp_serde::from_slice::<WebSocketChatroomMessageServer>(&msg_bytes)
-                                    .unwrap();
-
-                            // Handle the incoming message
-                            let relayed_message = match handle_incoming_chatroom_message(
-                                &state,
-                                ws_msg.clone(),
-                            )
-                            .await
-                            {
-                                Ok(relayed_msg) => relayed_msg,
-                                Err(err) => {
-                                    error!(
-                                        "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...",
-                                        ws_msg.message_owner_session.user_id
-                                    );
-                                    curr_open_conn.remove(&remote_addr);
-                                    break;
-                                }
-                            };
-
-                            // Relay the message
-                            // Check if there is a chatroom handler for this message
-                            let chatroom_handler_sender = if let Some(sender_handle) =
-                                currently_available_chatroom_handlers.get(&ws_msg.sent_to)
-                            {
-                                sender_handle.1.clone()
-                            } else {
-                                create_chatroom_handler(
-                                    chatroom_subscriptions_handle.clone(),
-                                    currently_available_chatroom_handlers.clone(),
-                                    ws_msg.sent_to,
-                                )
-                            };
-
-                            subscribe_to_channel_handler(
-                                ws_msg.sent_to,
-                                ws_msg.message_owner_session.user_id,
-                                client_thread_sender_handle.clone(),
-                                chatroom_subscriptions_handle.clone(),
-                            );
-
-                            chatroom_handler_sender
-                                .send(Message::Binary(
-                                    rmp_serde::to_vec(&relayed_message).unwrap().into(),
-                                ))
+                        // We can safely unwrap here
+                        let ws_msg =
+                            rmp_serde::from_slice::<WebSocketChatroomMessageServer>(&msg_bytes)
                                 .unwrap();
+
+                        // Handle the incoming message
+                        let relayed_message = match handle_incoming_chatroom_message(
+                            &state,
+                            ws_msg.clone(),
+                        )
+                        .await
+                        {
+                            Ok(relayed_msg) => relayed_msg,
+                            Err(err) => {
+                                error!(
+                                    "Error: `{err}` occured when trying to process incoming message from: `{}`. Quitting handler thread...",
+                                    ws_msg.message_owner_session.user_id
+                                );
+
+                                disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+
+                                break;
+                            }
+                        };
+
+                        // Relay the message
+                        // Check if there is a chatroom handler for this message
+                        let chatroom_handler_sender = if let Some(sender_handle) =
+                            currently_available_chatroom_handlers.get(&ws_msg.sent_to)
+                        {
+                            sender_handle.1.clone()
                         } else {
-                            // client disconnected
+                            error!("A user tried to send a message to a chatroom: `{}` which has been closed.", ws_msg.sent_to);
+
+                            disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+
                             break;
                         };
-                    }
+
+                        chatroom_handler_sender
+                            .send(Message::Binary(
+                                rmp_serde::to_vec(&relayed_message).unwrap().into(),
+                            ))
+                            .unwrap();
+                    } 
+                    // client disconnected
+                    else {
+                        disconnect_user_from_server(joined_chatroom_ids, user_session.user_id, remote_addr, chatroom_subscriptions_handle.clone(), currently_available_chatroom_handlers.clone(), curr_open_conn.clone());
+
+                        break;
+                    };
                 }
             });
 
@@ -212,6 +215,42 @@ pub fn subscribe_to_channel_handler(
     }
 }
 
+pub fn disconnect_user_from_server(
+    chatroom_ids: Vec<i32>,
+    user_id: i32,
+    remote_addr: SocketAddr,
+    chatroom_subscriptions: Arc<
+        DashMap<i32, DashMap<i32, tokio::sync::mpsc::Sender<axum::extract::ws::Message>>>,
+    >,
+    available_chatrooms_handle: Arc<DashMap<i32, (CancellationToken, Sender<Message>)>>,
+    curr_open_conn: Arc<dashmap::DashSet<SocketAddr>>
+) {
+    curr_open_conn.remove(&remote_addr);
+
+    for chatroom_id in chatroom_ids {
+        match chatroom_subscriptions.get_mut(&chatroom_id) {
+            Some(mut handler) => {
+                let websocket_list = handler.value_mut();
+
+                websocket_list.remove(&user_id);
+
+                if websocket_list.is_empty() {
+                    // We can unwrap here because if it didnt exist it wouldve been caught already
+                    let (_, (handler_cancel_token, _)) = available_chatrooms_handle.remove(&chatroom_id).unwrap();
+                    
+                    // Cancel handler
+                    handler_cancel_token.cancel();
+
+                    info!("Removing chatroom: {chatroom_id} as there are no participants left.");
+                }
+            }
+            None => {
+                error!("Tried to unsubscribe from a non-existent chatroom handler. id: {chatroom_id}");
+            }
+        }
+    }
+}
+
 pub fn create_chatroom_handler(
     chatroom_subscriptions: Arc<
         DashMap<i32, DashMap<i32, tokio::sync::mpsc::Sender<axum::extract::ws::Message>>>,
@@ -242,28 +281,18 @@ pub fn create_chatroom_handler(
                     // We can safely unwrap here
                     let chatroom_subs = chatroom_subscriptions.get(&this_chatroom_id).unwrap();
 
-                    let chatroom_is_empty = {
-                        let subs = chatroom_subs.value();
+                    let subs = chatroom_subs.value();
 
-                        subs.retain(|user_id, user_subscription| {
-                            if let Err(err) = user_subscription.try_send(recv_msg.clone()) {
-                                error!("Error occured when sending to client `{user_id}` handler: {err}");
+                    subs.retain(|user_id, user_subscription| {
+                        if let Err(err) = user_subscription.try_send(recv_msg.clone()) {
+                            error!("Error occured when sending to client `{user_id}` handler: {err}");
 
-                                false
-                            }
-                            else {
-                                true
-                            }
-                        });
-
-                        subs.is_empty()
-                    };
-
-                    // If there are no more users left in the chatroom delete it.
-                    if chatroom_is_empty {
-                        info!("Removing chatroom: {this_chatroom_id} as there are no participants left.");
-                        chatroom_subscriptions.remove(&this_chatroom_id);
-                    }
+                            false
+                        }
+                        else {
+                            true
+                        }
+                    });
                 }
                 else => {
                     break;

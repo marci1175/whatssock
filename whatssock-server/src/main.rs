@@ -51,7 +51,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
     console_subscriber::init();
 
-    info!("Initalizing server state...");
+    info!("In italizing server state...");
 
     // Establish connection with the database
     let servere_state = establish_state()?;

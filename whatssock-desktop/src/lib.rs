@@ -97,5 +97,6 @@ pub struct ApplicationContext {
 #[derive(Clone, Debug)]
 pub enum RequestQueueState {
     Requested,
+    Completed,
     NotRequested,
 }
