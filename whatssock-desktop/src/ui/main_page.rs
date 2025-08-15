@@ -262,6 +262,8 @@ pub fn MainPage() -> Element {
         },
     ));
 
+    let mut stick_to_bottom = use_signal(|| false);
+
     rsx! {
         div {
             class: "window",
@@ -560,22 +562,41 @@ pub fn MainPage() -> Element {
             // Displayes the messages in the currently selected chatroom. This also allows for interaction with the messages.
             div {
                 class: "chatpanel",
-
-
-
                 {
                     rsx!{
                         div {
                             id: "chats",
                             onscroll: move |_: Event<ScrollData>| {let chatroom_message_requester_sender = chatroom_message_requester_sender.clone(); async move {
                                 // Get how much we have scrolled
-                                let scroll_top = document::eval("return chats.scrollTop").await.unwrap().to_string().parse::<i32>().unwrap();
+                                let scroll_pos = document::eval("return chats.scrollTop").await.unwrap().to_string().parse::<i32>().unwrap();
+                                let inh = document::eval("return chats.scrollHeight").await.unwrap().to_string().parse::<i32>().unwrap();
+                                let offset = document::eval("return chats.offsetHeight").await.unwrap().to_string().parse::<i32>().unwrap();
+
+                                let scroll_area_bottom = inh - offset;
+                                
+                                // Stick to bottom if we are on the bottom
+                                stick_to_bottom.set(scroll_area_bottom == scroll_pos);
 
                                 // Request more messages to display from the server if the scroll is 0
-                                if scroll_top == 0 {
+                                if scroll_pos == 0 {
                                     chatroom_message_requester_sender.send(MessageFetchType::NextFromId(BulkMessagesFromId { chatroom_uid: currently_selected_chatroom_node.unwrap().chatroom_uid, count: 10, offset_id: cached_chat_messages.read().get(&currently_selected_chatroom_node.unwrap().chatroom_uid).unwrap().front().unwrap().message_id }));
                                 }
                             }},
+
+                            {
+                                // Check if we have sticked to the bottom
+                                if *stick_to_bottom.read() {
+                                    // Scroll the div to its bottom
+                                    spawn(async move {
+                                        let inh = document::eval("return chats.scrollHeight").await.unwrap().to_string().parse::<i32>().unwrap();
+                                        let offset = document::eval("return chats.offsetHeight").await.unwrap().to_string().parse::<i32>().unwrap();
+
+                                        let scroll_area_bottom = inh - offset;
+
+                                        document::eval(&format!("chats.scrollTo({}, {})", 0, scroll_area_bottom));
+                                    });
+                                }
+                            }
 
                             if let Some(currently_selected_chatroom_node) = currently_selected_chatroom_node.read().clone() {
                                 {
