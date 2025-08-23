@@ -1,15 +1,13 @@
 use dioxus::{logger::tracing::error, prelude::*};
 use dioxus_toast::{ToastFrame, ToastManager};
-use futures_util::StreamExt;
 use parking_lot::Mutex;
 use reqwest::Client;
+use secure_types::SecureArray;
 use std::{format, fs, path::PathBuf, sync::Arc};
 use whatssock_desktop::{
-    api_requests::init_websocket_connection,
-    authentication::auth::{create_hwid_key, decrypt_bytes},
-    HttpClient, Route, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{create_hwid_key, decrypt_bytes}, HttpClient, Route, SessionEncryptionKey, UserAccount, COOKIE_SAVE_PATH
 };
-use whatssock_lib::{client::UserSessionInformation, UserSession};
+use whatssock_lib::{client::UserSessionInformation, server::LoginResponseSecure, UserSession};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
@@ -71,26 +69,29 @@ fn init_application() -> Element {
 
     if let Ok(encrypted_bytes) = fs::read(&*COOKIE_SAVE_PATH) {
         // We should decrypt the bytes so that we can get the cookie
-        match decrypt_bytes(encrypted_bytes, create_hwid_key().unwrap_or_default()) {
-            Ok(user_session) => {
-                let user_session = user_session.clone();
+        match decrypt_bytes::<UserAccount>(encrypted_bytes, create_hwid_key().unwrap_or_default()) {
+            Ok(user_account) => {
+                let user_account = user_account.clone();
                 let server_sender = server_sender.clone();
 
                 spawn(async move {
                     // Verify user session with server
                     match server_sender
                         .lock()
-                        .verify_user_session(user_session.clone())
+                        .fetch_login(user_account.username, user_account.password)
                         .await
                     {
                         Ok(response) => {
-                            let user_information = serde_json::from_str::<UserSessionInformation>(
+                            let login_response_secure = serde_json::from_str::<LoginResponseSecure>(
                                 &response.text().await.unwrap(),
                             )
                             .unwrap();
 
-                            // provide_root_context(value);
-                            log_res.set(Some((user_session, user_information)));
+                            let (login_response, encryption_key) = login_response_secure.pop_secure_key();
+
+                            provide_root_context(SessionEncryptionKey(Arc::new(SecureArray::new(encryption_key).unwrap())));
+                            
+                            log_res.set(Some((login_response.user_session, login_response.user_information)));
                         }
                         Err(err) => {
                             error!("{err}");

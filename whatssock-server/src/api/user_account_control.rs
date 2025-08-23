@@ -3,8 +3,8 @@ use crate::models::{
     NewUserAccount, NewUserSession, UpdateLastMessage, UserAccountEntry, UserSessionEntry,
 };
 use crate::schema::chatrooms::dsl::chatrooms;
-use crate::schema::user_signin_tokens::dsl::user_signin_tokens;
-use crate::schema::user_signin_tokens::{session_token, user_id};
+use crate::schema::user_session_auth::dsl::user_session_auth;
+use crate::schema::user_session_auth::{session_token, user_id};
 use crate::schema::users::{id, passw, username};
 use crate::{
     ServerState,
@@ -18,14 +18,14 @@ use diesel::{
 };
 use log::error;
 use rand::{Rng, rng};
-use whatssock_lib::UserSession;
+use whatssock_lib::{UserSession, UserSessionSecure};
 use whatssock_lib::client::{LoginRequest, RegisterRequest, UserSessionInformation};
-use whatssock_lib::server::{LoginResponse, LogoutResponse};
+use whatssock_lib::server::{LoginResponse, LoginResponseSecure, LogoutResponse};
 
 pub async fn fetch_login(
     State(state): State<ServerState>,
     Json(information): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, StatusCode> {
+) -> Result<Json<LoginResponseSecure>, StatusCode> {
     let mut pg_connection = state.pg_pool.get().map_err(|err| {
         error!(
             "An error occured while fetching login information from db: {}",
@@ -50,9 +50,12 @@ pub async fn fetch_login(
         })?;
 
     // Issue a new session token for future logins
-    let session_cookie_token = generate_session_token();
+    let session_cookie_token = generate_random_secure_key();
+    
+    // Issue a new encryption key for communication between the client and the server
+    let encryption_key = generate_random_secure_key();
 
-    let user_session_count = user_signin_tokens
+    let user_session_count = user_session_auth
         .filter(user_id.eq(user_account.id))
         .select(count_star())
         .first::<i64>(&mut pg_connection)
@@ -69,11 +72,13 @@ pub async fn fetch_login(
     // If there arent this means some sort of issue has occured, thus the session has been invalidated or deleted.
     if user_session_count != 0 {
         // Search up a session token for the user, if it exists update it
-        diesel::update(user_signin_tokens)
+        diesel::update(user_session_auth)
             .filter(user_id.eq(user_account.id))
             .set(&NewUserSession {
                 user_id: user_account.id,
+                // Issue a new session token for future logins
                 session_token: session_cookie_token.clone().to_vec(),
+                encryption_key: encryption_key.clone().to_vec()
             })
             .get_result::<UserSessionEntry>(&mut pg_connection)
             .map_err(|err| {
@@ -85,10 +90,12 @@ pub async fn fetch_login(
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
     } else {
-        diesel::insert_into(user_signin_tokens)
+        diesel::insert_into(user_session_auth)
             .values(&NewUserSession {
                 user_id: user_account.id,
+                // Issue a new session token for future logins
                 session_token: session_cookie_token.clone().to_vec(),
+                encryption_key: encryption_key.clone().to_vec()
             })
             .get_result::<UserSessionEntry>(&mut pg_connection)
             .map_err(|err| {
@@ -100,15 +107,16 @@ pub async fn fetch_login(
             })?;
     }
 
-    Ok(Json(LoginResponse {
+    Ok(Json(LoginResponseSecure {
         user_information: UserSessionInformation {
             username: user_account.username,
             chatrooms_joined: user_account.chatrooms_joined,
             user_id: user_account.id,
         },
-        user_session: UserSession {
+        user_session_secure: UserSessionSecure {
             user_id: user_account.id,
             session_token: session_cookie_token,
+            encryption_key: encryption_key,
         },
     }))
 }
@@ -116,7 +124,7 @@ pub async fn fetch_login(
 pub async fn register_user(
     State(state): State<ServerState>,
     Json(information): Json<RegisterRequest>,
-) -> Result<Json<LoginResponse>, StatusCode> {
+) -> Result<Json<LoginResponseSecure>, StatusCode> {
     let mut pg_connection = state.pg_pool.get().map_err(|err| {
         error!(
             "An error occured while fetching login information from db: {}",
@@ -161,13 +169,19 @@ pub async fn register_user(
         })?;
 
     // Issue a new session token for future logins
-    let session_cookie_token = generate_session_token();
+    let session_cookie_token = generate_random_secure_key();
+    
+    // Issue a new encryption key for communication between the client and the server
+    let encryption_key = generate_random_secure_key();
 
     // Store the session token in the db, there is no way of having another session token for this user as we have just created it.
-    diesel::insert_into(user_signin_tokens)
+    diesel::insert_into(user_session_auth)
         .values(&NewUserSession {
             user_id: user_account.id,
+            // Issue a new session token for future logins
             session_token: session_cookie_token.clone().to_vec(),
+            // Issue a new encryption key for communication between the client and the server
+            encryption_key: encryption_key.clone().to_vec(),
         })
         .get_result::<UserSessionEntry>(&mut pg_connection)
         .map_err(|err| {
@@ -178,10 +192,11 @@ pub async fn register_user(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    Ok(Json(LoginResponse {
-        user_session: UserSession {
+    Ok(Json(LoginResponseSecure {
+        user_session_secure: UserSessionSecure {
             user_id: user_account.id,
             session_token: session_cookie_token,
+            encryption_key: encryption_key,
         },
         user_information: UserSessionInformation {
             username: user_account.username,
@@ -191,7 +206,7 @@ pub async fn register_user(
     }))
 }
 
-pub async fn fetch_session_token(
+pub async fn fetch_user_information_from_session(
     State(state): State<ServerState>,
     Json(user_session): Json<UserSession>,
 ) -> Result<Json<UserSessionInformation>, StatusCode> {
@@ -241,7 +256,7 @@ pub async fn handle_logout_request(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    match delete(user_signin_tokens.filter(session_token.eq(session_cookie.session_token)))
+    match delete(user_session_auth.filter(session_token.eq(session_cookie.session_token)))
         .execute(&mut pg_connection)
     {
         Ok(r_affected) => {
@@ -257,7 +272,7 @@ pub async fn handle_logout_request(
     Ok(Json(LogoutResponse {}))
 }
 
-pub fn generate_session_token() -> [u8; 32] {
+pub fn generate_random_secure_key() -> [u8; 32] {
     let mut rng = rng();
 
     let mut custom_identifier = [0_u8; 32];
@@ -276,27 +291,18 @@ pub fn verify_user_session(
     pg_connection: &mut r2d2::PooledConnection<
         diesel::r2d2::ConnectionManager<diesel::PgConnection>,
     >,
-) -> Result<(), StatusCode> {
-    let matching_user_tokens = select(exists(
-        user_signin_tokens
-            .filter(schema::user_signin_tokens::user_id.eq(user_session.user_id))
-            .filter(schema::user_signin_tokens::session_token.eq(user_session.session_token)),
-    ))
-    .get_result::<bool>(pg_connection)
-    .map_err(|err| {
-        error!(
-            "An error occured while verifying login information from db: {}",
-            err
-        );
+) -> Result<UserSessionEntry, StatusCode> {
+    let user_session: UserSessionEntry = 
+        user_session_auth
+            .filter(schema::user_session_auth::user_id.eq(user_session.user_id))
+            .filter(schema::user_session_auth::session_token.eq(user_session.session_token))
+            .select(UserSessionEntry::as_select())
+            .get_result::<UserSessionEntry>(pg_connection)
+            .map_err(|_err| {
+                StatusCode::FORBIDDEN
+            })?;
 
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    if !matching_user_tokens {
-        return Err(StatusCode::FORBIDDEN);
-    }
-
-    Ok(())
+    Ok(user_session)
 }
 
 pub fn lookup_joined_chatrooms(

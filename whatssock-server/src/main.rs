@@ -27,7 +27,7 @@ use whatssock_server::{
             fetch_user,
         },
         user_account_control::{
-            fetch_login, fetch_session_token, handle_logout_request, register_user,
+            fetch_login, fetch_user_information_from_session, handle_logout_request, register_user,
         },
         websocket::handler,
     },
@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     let router = Router::new()
         .route(POST_REGISTER, post(register_user))
         .route(POST_LOGIN, post(fetch_login))
-        .route(POST_SESSION_VERIFICATION, post(fetch_session_token))
+        .route(POST_SESSION_VERIFICATION, post(fetch_user_information_from_session))
         .route(POST_LOGOUT, post(handle_logout_request))
         .route(
             POST_REQUEST_UK_CHATROOM,

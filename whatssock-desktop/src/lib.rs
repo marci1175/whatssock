@@ -1,8 +1,5 @@
 use std::{
-    fs,
-    ops::{Deref, DerefMut},
-    path::PathBuf,
-    sync::{Arc, LazyLock},
+    fmt::Debug, fs, ops::{Deref, DerefMut}, path::PathBuf, sync::{Arc, LazyLock}
 };
 
 use dioxus::prelude::Routable;
@@ -10,6 +7,7 @@ use dioxus::prelude::*;
 use dirs::data_local_dir;
 use parking_lot::Mutex;
 use reqwest::Client;
+use secure_types::SecureArray;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{server::WebSocketChatroomMessageServer, UserSession};
@@ -48,13 +46,15 @@ impl DerefMut for HttpClient {
 pub struct AuthHttpClient {
     client: HttpClient,
     user_session: UserSession,
+    encryption_key: SessionEncryptionKey,
 }
 
 impl AuthHttpClient {
-    pub fn new(client: HttpClient, user_session: UserSession) -> Self {
+    pub fn new(client: HttpClient, user_session: UserSession, encryption_key: SessionEncryptionKey) -> Self {
         Self {
             client,
             user_session,
+            encryption_key
         }
     }
 }
@@ -101,6 +101,21 @@ pub enum RequestQueueState {
     NotRequested,
 }
 
-pub struct SessionEncryptionKey {
-    key: [u8; 32],
+#[derive(Clone)]
+pub struct SessionEncryptionKey(pub Arc<SecureArray<u8, 32>>);
+
+impl Debug for SessionEncryptionKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(
+            &self.0.unlocked_scope(|key| {
+                format!("{key:?}")
+            })
+        )
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct UserAccount {
+    pub username: String,
+    pub password: String,
 }

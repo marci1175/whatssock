@@ -29,20 +29,22 @@ pub struct NewUserAccount {
 }
 
 #[derive(Debug, Clone, Selectable, QueryableByName, Queryable)]
-#[diesel(table_name = crate::schema::user_signin_tokens)]
+#[diesel(table_name = crate::schema::user_session_auth)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct UserSessionEntry {
     pub token_id: i32,
     pub user_id: i32,
     pub session_token: Vec<u8>,
+    pub encryption_key: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Insertable, AsChangeset)]
-#[diesel(table_name = crate::schema::user_signin_tokens)]
+#[diesel(table_name = crate::schema::user_session_auth)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 pub struct NewUserSession {
     pub user_id: i32,
     pub session_token: Vec<u8>,
+    pub encryption_key: Vec<u8>
 }
 
 #[derive(Debug, Clone, Selectable, QueryableByName, Queryable)]

@@ -1,6 +1,27 @@
 use chrono::NaiveDateTime;
 
-use crate::{UserSession, WebSocketChatroomMessages, client::UserSessionInformation};
+use crate::{client::UserSessionInformation, UserSession, UserSessionSecure, WebSocketChatroomMessages};
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct LoginResponseSecure {
+    pub user_information: UserSessionInformation,
+    pub user_session_secure: UserSessionSecure,
+}
+
+impl LoginResponseSecure {
+    pub fn pop_secure_key(self) -> (LoginResponse, [u8; 32]) {
+        let (user_session, encryption_key) = self.user_session_secure.pop_secure_key();
+
+        (
+            LoginResponse {
+                user_information: self.user_information,
+                user_session,
+            },
+
+            encryption_key
+        )
+    }
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LoginResponse {

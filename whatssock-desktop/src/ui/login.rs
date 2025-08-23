@@ -1,12 +1,11 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    api_requests::init_websocket_connection,
-    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
-    HttpClient, Route, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{deserialize_into_login_response, store_user_account_on_disk}, HttpClient, Route, SessionEncryptionKey, COOKIE_SAVE_PATH
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
+use secure_types::SecureArray;
 use whatssock_lib::{client::UserSessionInformation, UserSession};
 
 enum AttemptResult {
@@ -93,11 +92,13 @@ pub fn Login() -> Element {
                                 dbg!(&response);
                                 let login_response = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
 
-                                tracing::info!("{:?}", &login_response);
+                                let (user_session, encryption_key) = login_response.user_session_secure.pop_secure_key();
 
-                                user_session_login.set(Some((login_response.user_session.clone(), login_response.user_information)));
+                                user_session_login.set(Some((user_session.clone(), login_response.user_information)));
+                                
+                                provide_root_context(SessionEncryptionKey(Arc::new(SecureArray::new(encryption_key).unwrap())));
 
-                                store_user_session_on_disk(&login_response.user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
+                                store_user_account_on_disk(&crate::UserAccount { username: username.to_string(), password: password.to_string() }, (*COOKIE_SAVE_PATH).clone()).unwrap();
 
                                 // Update state
                                 log_res.set(Some(AttemptResult::Succeeded("Login Successful! Redirecting....".to_string())));

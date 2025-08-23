@@ -1,45 +1,6 @@
 [package]
 name = "whatssock-mobile"
 version = "0.1.0"
-authors = ["Varga Marcell <128537619+marci1175@users.noreply.github.com>"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+edition = "2024"
 
 [dependencies]
-whatssock-lib = { path = "../whatssock-lib" }
-anyhow = "1.0.98"
-chacha20poly1305 = "0.10.1"
-chrono = "0.4.41"
-dioxus = { version = "0.6.0", features = ["router","html", "mobile"] }
-dioxus-toast = "0.6.0"
-dirs = "6.0.0"
-parking_lot = "0.12.4"
-reqwest = "0.12.22"
-rmp-serde = "1.3.0"
-serde = "1.0.219"
-serde_json = "1.0.140"
-sha2 = "0.10.9"
-tokio-tungstenite = "0.27.0"
-tokio = {version = "1.46.1", features = ["full"]}
-futures-util = "0.3.31"
-indexmap = "2.10.0"
-web-sys = {version = "0.3.77", features = ["Element"]}
-dashmap = "6.1.0"
-
-[features]
-default = ["mobile"]
-web = ["dioxus/web"]
-desktop = ["dioxus/desktop"]
-mobile = ["dioxus/mobile"]
-
-[profile.wasm-dev]
-inherits = "dev"
-opt-level = 1
-
-[profile.server-dev]
-inherits = "dev"
-
-[profile.android-dev]
-inherits = "dev"
-

@@ -1,12 +1,11 @@
 use std::{fmt::Display, sync::Arc};
 
 use crate::{
-    api_requests::init_websocket_connection,
-    authentication::auth::{deserialize_into_login_response, store_user_session_on_disk},
-    HttpClient, COOKIE_SAVE_PATH,
+    api_requests::init_websocket_connection, authentication::auth::{deserialize_into_login_response, store_user_account_on_disk}, HttpClient, SessionEncryptionKey, COOKIE_SAVE_PATH
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
+use secure_types::SecureArray;
 use whatssock_lib::server::LoginResponse;
 
 enum AttemptResult {
@@ -83,14 +82,18 @@ pub fn Register() -> Element {
                     spawn(async move {
                         match client.lock().send_register_request(username.to_string(), password.to_string(), email.to_string()).await {
                             Ok(response) => {
-                                let login_response = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
+                                let login_response_secure = deserialize_into_login_response(response.text().await.unwrap()).unwrap();
+
+                                let (login_response, encryption_key) = login_response_secure.pop_secure_key();
+
+                                provide_root_context(SessionEncryptionKey(Arc::new(SecureArray::new(encryption_key).unwrap())));
 
                                 // Update state
                                 log_res.set(Some(AttemptResult::Succeeded("Register Successful! Redirecting....".to_string())));
 
                                 user_login_response.set(Some(login_response.clone()));
 
-                                store_user_session_on_disk(&login_response.user_session, (*COOKIE_SAVE_PATH).clone()).unwrap();
+                                store_user_account_on_disk(&crate::UserAccount { username: username.to_string(), password: password.to_string() }, (*COOKIE_SAVE_PATH).clone()).unwrap();
                             },
                             Err(err) => {
                                 tracing::error!("Error occured when registering: {}", err.to_string());

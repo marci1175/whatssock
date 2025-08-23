@@ -24,7 +24,7 @@ use whatssock_lib::{
     WebSocketChatroomMessages,
 };
 
-use crate::{ApplicationContext, AuthHttpClient, HttpClient, RequestQueueState, Route};
+use crate::{ApplicationContext, AuthHttpClient, HttpClient, RequestQueueState, Route, SessionEncryptionKey};
 
 #[component]
 pub fn MainPage() -> Element {
@@ -36,9 +36,10 @@ pub fn MainPage() -> Element {
     )>();
 
     let http_client = use_context::<Arc<Mutex<HttpClient>>>().lock().clone();
+    let encryption_key = use_context::<SessionEncryptionKey>();
 
     let application_ctx = provide_root_context(ApplicationContext {
-        authed_http_client: AuthHttpClient::new(http_client, user_session.clone()),
+        authed_http_client: AuthHttpClient::new(http_client, user_session.clone(), encryption_key),
         websocket_client_out: websocket_sender,
         websocket_client_in: remote_receiver,
     });

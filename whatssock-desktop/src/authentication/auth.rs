@@ -5,10 +5,13 @@ use chacha20poly1305::{
     aead::{Aead, OsRng},
     AeadCore, ChaCha20Poly1305, KeyInit,
 };
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use whatssock_lib::{server::LoginResponse, UserSession};
+use whatssock_lib::{server::{LoginResponse, LoginResponseSecure}, UserSession};
 
-pub fn deserialize_into_login_response(json_input: String) -> Result<LoginResponse> {
+use crate::UserAccount;
+
+pub fn deserialize_into_login_response(json_input: String) -> Result<LoginResponseSecure> {
     Ok(serde_json::from_str(&json_input)?)
 }
 
@@ -16,10 +19,10 @@ pub fn deserialize_into_user_session(json_input: String) -> Result<UserSession> 
     Ok(serde_json::from_str(&json_input)?)
 }
 
-pub fn store_user_session_on_disk(user_session: &UserSession, path: PathBuf) -> Result<()> {
+pub fn store_user_account_on_disk(user_account: &UserAccount, path: PathBuf) -> Result<()> {
     let hwid_key = create_hwid_key()?;
 
-    let serialized_bytes = rmp_serde::to_vec(&user_session)?;
+    let serialized_bytes = rmp_serde::to_vec(&user_account)?;
 
     let encrypted_user_session = encrypt_bytes(serialized_bytes, hwid_key)?;
 
@@ -99,7 +102,7 @@ pub fn encrypt_bytes(
     Ok(stored_bytes)
 }
 
-pub fn decrypt_bytes(
+pub fn decrypt_bytes<T: for<'a> Deserialize<'a>>(
     mut encrypted_bytes: Vec<u8>,
     key: sha2::digest::generic_array::GenericArray<
         u8,
@@ -123,7 +126,7 @@ pub fn decrypt_bytes(
             chacha20poly1305::consts::B0,
         >,
     >,
-) -> Result<UserSession, anyhow::Error> {
+) -> Result<T, anyhow::Error> {
     let nonce = encrypted_bytes.drain(0..12).collect::<Vec<u8>>();
 
     let cipher = ChaCha20Poly1305::new(&key);
@@ -135,5 +138,5 @@ pub fn decrypt_bytes(
         .map_err(|err| anyhow::Error::msg(err.to_string()))?;
 
     // Serialize bytes
-    Ok(rmp_serde::from_slice::<UserSession>(&decrypted_bytes)?)
+    Ok(rmp_serde::from_slice::<T>(&decrypted_bytes)?)
 }

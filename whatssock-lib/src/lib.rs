@@ -13,6 +13,26 @@ pub struct UserSession {
     pub session_token: [u8; 32],
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq)]
+pub struct UserSessionSecure {
+    pub user_id: i32,
+    pub session_token: [u8; 32],
+    pub encryption_key: [u8; 32],
+}
+
+impl UserSessionSecure {
+    pub fn pop_secure_key(self) -> (UserSession, [u8; 32]) {
+        (
+            UserSession {
+                user_id: self.user_id,
+                session_token: self.session_token,
+            },
+
+            self.encryption_key
+        )
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
 pub struct FetchUnknownChatroom {
     pub user_session: UserSession,

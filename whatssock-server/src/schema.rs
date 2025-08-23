@@ -33,10 +33,11 @@ diesel::table! {
 }
 
 diesel::table! {
-    user_signin_tokens (token_id) {
+    user_session_auth (token_id) {
         token_id -> Int4,
         user_id -> Int4,
         session_token -> Bytea,
+        encryption_key -> Bytea,
     }
 }
 
@@ -55,6 +56,6 @@ diesel::allow_tables_to_appear_in_same_query!(
     chatrooms,
     messages,
     posts,
-    user_signin_tokens,
+    user_session_auth,
     users,
 );

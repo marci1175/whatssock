@@ -66,22 +66,6 @@ impl HttpClient {
 
         Ok(response)
     }
-
-    pub async fn verify_user_session(&self, user_sesion: UserSession) -> anyhow::Result<Response> {
-        let response = self
-            .client
-            .post(format!("{}{}", self.base_url, POST_SESSION_VERIFICATION))
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&user_sesion)?)
-            .send()
-            .await?;
-
-        let response_code = response.status().as_u16();
-
-        ensure!(response_code == 200, "Response code: {response_code}");
-
-        Ok(response)
-    }
 }
 
 impl AuthHttpClient {
