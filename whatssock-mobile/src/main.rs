@@ -9,21 +9,21 @@ use whatssock_mobile::{
     authentication::auth::{create_hwid_key, decrypt_bytes},
     HttpClient, Route, COOKIE_SAVE_PATH,
 };
-use whatssock_lib::{client::UserInformation, UserSession};
+use whatssock_lib::{client::UserSessionInformation, UserSession};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
 fn main() -> anyhow::Result<()> {
     // Initalize a local file for in the user's folder
-    let path = PathBuf::from(format!(
-        "{}/.whatssock",
-        std::env::var("USERPROFILE").unwrap()
-    ));
+    // let path = PathBuf::from(format!(
+    //     "{}/.whatssock",
+    //     std::env::var("USERPROFILE").unwrap()
+    // ));
 
-    // Only attempt to create the folder if it doesnt exist yet
-    if let Err(_err) = std::fs::read_dir(&path) {
-        std::fs::create_dir(path)?;
-    }
+    // // Only attempt to create the folder if it doesnt exist yet
+    // if let Err(_err) = std::fs::read_dir(&path) {
+    //     std::fs::create_dir(path)?;
+    // }
 
     dioxus::launch(App);
 
@@ -40,7 +40,7 @@ fn App() -> Element {
         }
         Router::<Route> {}
         {
-            init_application()
+            // init_application()
         }
         document::Link { rel: "stylesheet", href: MAIN_CSS }
     }
@@ -66,8 +66,8 @@ fn init_application() -> Element {
         server_sender.clone();
 
     use_root_context(|| server_sender_clone);
-    let mut log_res: Signal<Option<(UserSession, UserInformation)>> = use_signal(|| None);
-    use_root_context::<Signal<Option<(UserSession, UserInformation)>>>(|| Signal::new(None));
+    let mut log_res: Signal<Option<(UserSession, UserSessionInformation)>> = use_signal(|| None);
+    use_root_context::<Signal<Option<(UserSession, UserSessionInformation)>>>(|| Signal::new(None));
 
     if let Ok(encrypted_bytes) = fs::read(&*COOKIE_SAVE_PATH) {
         // We should decrypt the bytes so that we can get the cookie
@@ -84,7 +84,7 @@ fn init_application() -> Element {
                         .await
                     {
                         Ok(response) => {
-                            let user_information = serde_json::from_str::<UserInformation>(
+                            let user_information = serde_json::from_str::<UserSessionInformation>(
                                 &response.text().await.unwrap(),
                             )
                             .unwrap();
@@ -105,7 +105,7 @@ fn init_application() -> Element {
 
     use_effect(move || {
         if let Some((usr_session, user_info)) = (*log_res.read()).clone() {
-            let mut session = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
+            let mut session = use_context::<Signal<Option<(UserSession, UserSessionInformation)>>>();
             session.set(Some((usr_session.clone(), user_info)));
             provide_root_context({
                 let (sender, reciever) = init_websocket_connection(usr_session.clone());

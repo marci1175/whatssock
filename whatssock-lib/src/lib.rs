@@ -1,5 +1,6 @@
 pub mod client;
 pub mod server;
+pub mod domain_paths;
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};

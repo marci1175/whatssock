@@ -9,7 +9,7 @@ use whatssock_desktop::{
     authentication::auth::{create_hwid_key, decrypt_bytes},
     HttpClient, Route, COOKIE_SAVE_PATH,
 };
-use whatssock_lib::{client::UserInformation, UserSession};
+use whatssock_lib::{client::UserSessionInformation, UserSession};
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
 
@@ -66,8 +66,8 @@ fn init_application() -> Element {
         server_sender.clone();
 
     use_root_context(|| server_sender_clone);
-    let mut log_res: Signal<Option<(UserSession, UserInformation)>> = use_signal(|| None);
-    use_root_context::<Signal<Option<(UserSession, UserInformation)>>>(|| Signal::new(None));
+    let mut log_res: Signal<Option<(UserSession, UserSessionInformation)>> = use_signal(|| None);
+    use_root_context::<Signal<Option<(UserSession, UserSessionInformation)>>>(|| Signal::new(None));
 
     if let Ok(encrypted_bytes) = fs::read(&*COOKIE_SAVE_PATH) {
         // We should decrypt the bytes so that we can get the cookie
@@ -84,11 +84,12 @@ fn init_application() -> Element {
                         .await
                     {
                         Ok(response) => {
-                            let user_information = serde_json::from_str::<UserInformation>(
+                            let user_information = serde_json::from_str::<UserSessionInformation>(
                                 &response.text().await.unwrap(),
                             )
                             .unwrap();
 
+                            // provide_root_context(value);
                             log_res.set(Some((user_session, user_information)));
                         }
                         Err(err) => {
@@ -105,7 +106,7 @@ fn init_application() -> Element {
 
     use_effect(move || {
         if let Some((usr_session, user_info)) = (*log_res.read()).clone() {
-            let mut session = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
+            let mut session = use_context::<Signal<Option<(UserSession, UserSessionInformation)>>>();
             session.set(Some((usr_session.clone(), user_info)));
             provide_root_context({
                 let (sender, reciever) = init_websocket_connection(usr_session.clone());

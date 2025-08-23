@@ -1,10 +1,10 @@
 use chrono::NaiveDateTime;
 
-use crate::{UserSession, WebSocketChatroomMessages, client::UserInformation};
+use crate::{UserSession, WebSocketChatroomMessages, client::UserSessionInformation};
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
 pub struct LoginResponse {
-    pub user_information: UserInformation,
+    pub user_information: UserSessionInformation,
     pub user_session: UserSession,
 }
 

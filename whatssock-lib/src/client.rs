@@ -16,7 +16,7 @@ pub struct RegisterRequest {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-pub struct UserInformation {
+pub struct UserSessionInformation {
     pub username: String,
     pub chatrooms_joined: Vec<Option<i32>>,
     pub user_id: i32,

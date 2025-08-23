@@ -17,7 +17,7 @@ use tokio::{
 };
 use tokio_tungstenite::tungstenite::Message;
 use whatssock_lib::{
-    client::{UserInformation, WebSocketChatroomMessageClient},
+    client::{UserSessionInformation, WebSocketChatroomMessageClient},
     server::WebSocketChatroomMessageServer,
     BulkMessagesFromId, BulkMessagesFromLatest, ChatroomMessageResponse, FetchChatroomResponse,
     FetchKnownChatroomResponse, FetchMessagesResponse, MessageFetchType, UserLookup, UserSession,
@@ -28,7 +28,7 @@ use crate::{ApplicationContext, AuthHttpClient, HttpClient, RequestQueueState, R
 
 #[component]
 pub fn MainPage() -> Element {
-    let (user_session, user_information) = use_context::<(UserSession, UserInformation)>();
+    let (user_session, user_information) = use_context::<(UserSession, UserSessionInformation)>();
 
     let (websocket_sender, remote_receiver) = use_context::<(
         Sender<WebSocketChatroomMessageServer>,
@@ -423,7 +423,7 @@ pub fn MainPage() -> Element {
                                     client.request_logout().await.unwrap();
 
                                     // Reset root ctx for the session
-                                    let mut session_ctx = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
+                                    let mut session_ctx = use_context::<Signal<Option<(UserSession, UserSessionInformation)>>>();
                                     session_ctx.set(None);
 
                                     navigator.replace(Route::Login {  });

@@ -100,3 +100,7 @@ pub enum RequestQueueState {
     Completed,
     NotRequested,
 }
+
+pub struct SessionEncryptionKey {
+    key: [u8; 32],
+}

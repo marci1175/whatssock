@@ -11,10 +11,7 @@ use tokio::{
 };
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use whatssock_lib::{
-    client::{FetchMessages, LoginRequest, RegisterRequest},
-    server::WebSocketChatroomMessageServer,
-    CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, MessageFetchType,
-    UserSession,
+    client::{FetchMessages, LoginRequest, RegisterRequest}, domain_paths::{WS_ESTABLISH_CHATROOM_CONNECTION, GET_FETCH_MESSAGES, GET_FETCH_USER, POST_LOGIN, POST_LOGOUT, POST_NEW_CHATROOM, POST_REGISTER, POST_REQUEST_K_CHATROOM, POST_REQUEST_UK_CHATROOM, POST_SESSION_VERIFICATION}, server::WebSocketChatroomMessageServer, CreateChatroomRequest, FetchKnownChatrooms, FetchUnknownChatroom, MessageFetchType, UserSession
 };
 
 impl HttpClient {
@@ -28,7 +25,7 @@ impl HttpClient {
 
         let response = self
             .client
-            .post(format!("{}/api/login", self.base_url))
+            .post(format!("{}{}", self.base_url, POST_LOGIN))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&LoginRequest { username, password })?)
             .send()
@@ -53,7 +50,7 @@ impl HttpClient {
 
         let response = self
             .client
-            .post(format!("{}/api/register", self.base_url))
+            .post(format!("{}{}", self.base_url, POST_REGISTER))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&RegisterRequest {
                 username,
@@ -73,7 +70,7 @@ impl HttpClient {
     pub async fn verify_user_session(&self, user_sesion: UserSession) -> anyhow::Result<Response> {
         let response = self
             .client
-            .post(format!("{}/api/session", self.base_url))
+            .post(format!("{}{}", self.base_url, POST_SESSION_VERIFICATION))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&user_sesion)?)
             .send()
@@ -91,7 +88,7 @@ impl AuthHttpClient {
     pub async fn request_logout(&self) -> anyhow::Result<Response> {
         let response = self
             .client
-            .post(format!("{}/api/logout", self.client.base_url))
+            .post(format!("{}{}", self.client.base_url, POST_LOGOUT))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&self.user_session)?)
             .send()
@@ -112,8 +109,8 @@ impl AuthHttpClient {
         let response = self
             .client
             .post(format!(
-                "{}/api/request_unknown_chatroom",
-                self.client.base_url
+                "{}{}",
+                self.client.base_url, POST_REQUEST_UK_CHATROOM
             ))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&FetchUnknownChatroom {
@@ -135,8 +132,8 @@ impl AuthHttpClient {
         let response = self
             .client
             .post(format!(
-                "{}/api/request_known_chatroom",
-                self.client.base_url
+                "{}{}",
+                self.client.base_url, POST_REQUEST_K_CHATROOM
             ))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&FetchKnownChatrooms {
@@ -160,7 +157,7 @@ impl AuthHttpClient {
     ) -> anyhow::Result<Response> {
         let response = self
             .client
-            .post(format!("{}/api/chatroom_new", self.client.base_url))
+            .post(format!("{}{}", self.client.base_url, POST_NEW_CHATROOM))
             .header("Content-Type", "application/json")
             .body(serde_json::to_string(&CreateChatroomRequest {
                 user_session: self.user_session.clone(),
@@ -180,7 +177,7 @@ impl AuthHttpClient {
     pub async fn fetch_user_information(&self, user_id: i32) -> anyhow::Result<Response> {
         let response = self
             .client
-            .get(format!("{}/api/fetch_user", self.client.base_url))
+            .get(format!("{}{}", self.client.base_url, GET_FETCH_USER))
             .header("Content-Type", "text/plain")
             .body(user_id.to_string())
             .send()
@@ -199,7 +196,7 @@ impl AuthHttpClient {
     ) -> anyhow::Result<Response> {
         let response = self
             .client
-            .get(format!("{}/api/fetch_messages", self.client.base_url))
+            .get(format!("{}{}", self.client.base_url, GET_FETCH_MESSAGES))
             .header("Content-Type", "application/json")
             .body(
                 serde_json::to_string(&FetchMessages {
@@ -230,11 +227,11 @@ pub fn init_websocket_connection(
             let (ws_socket, response) = match connect_async({
                 #[cfg(debug_assertions)]
                 {
-                    String::from("ws://[::1]:3004/ws/chatroom")
+                    String::from(format!("ws://[::1]:3004{}", WS_ESTABLISH_CHATROOM_CONNECTION))
                 }
                 #[cfg(not(debug_assertions))]
                 {
-                    String::from("ws://whatssock.com/ws/chatroom")
+                    String::from(format!("ws://whatssock.com{}", WS_ESTABLISH_CHATROOM_CONNECTION))
                 }
             })
             .await

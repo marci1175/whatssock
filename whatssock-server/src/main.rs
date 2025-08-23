@@ -18,6 +18,7 @@ use dotenvy::dotenv;
 use env_logger::Env;
 use log::info;
 use tokio::net::TcpListener;
+use whatssock_lib::domain_paths::{GET_FETCH_MESSAGES, GET_FETCH_USER, POST_LOGIN, POST_LOGOUT, POST_NEW_CHATROOM, POST_REGISTER, POST_REQUEST_K_CHATROOM, POST_REQUEST_UK_CHATROOM, POST_SESSION_VERIFICATION, WS_ESTABLISH_CHATROOM_CONNECTION};
 use whatssock_server::{
     ServerState,
     api::{
@@ -58,19 +59,19 @@ async fn main() -> anyhow::Result<()> {
 
     // Start up the webserver
     let router = Router::new()
-        .route("/api/register", post(register_user))
-        .route("/api/login", post(fetch_login))
-        .route("/api/session", post(fetch_session_token))
-        .route("/api/logout", post(handle_logout_request))
+        .route(POST_REGISTER, post(register_user))
+        .route(POST_LOGIN, post(fetch_login))
+        .route(POST_SESSION_VERIFICATION, post(fetch_session_token))
+        .route(POST_LOGOUT, post(handle_logout_request))
         .route(
-            "/api/request_unknown_chatroom",
+            POST_REQUEST_UK_CHATROOM,
             post(fetch_unknown_chatroom),
         )
-        .route("/api/request_known_chatroom", post(fetch_known_chatrooms))
-        .route("/api/chatroom_new", post(create_chatroom))
-        .route("/api/fetch_user", get(fetch_user))
-        .route("/api/fetch_messages", get(fetch_messages))
-        .route("/ws/chatroom", any(handler))
+        .route(POST_REQUEST_K_CHATROOM, post(fetch_known_chatrooms))
+        .route(POST_NEW_CHATROOM, post(create_chatroom))
+        .route(GET_FETCH_USER, get(fetch_user))
+        .route(GET_FETCH_MESSAGES, get(fetch_messages))
+        .route(WS_ESTABLISH_CHATROOM_CONNECTION, any(handler))
         .layer(middleware::from_fn(log_request))
         .with_state(servere_state);
 

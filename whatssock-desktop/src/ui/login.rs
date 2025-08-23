@@ -7,7 +7,7 @@ use crate::{
 };
 use dioxus::{logger::tracing, prelude::*};
 use parking_lot::Mutex;
-use whatssock_lib::{client::UserInformation, UserSession};
+use whatssock_lib::{client::UserSessionInformation, UserSession};
 
 enum AttemptResult {
     Attempted(String),
@@ -29,8 +29,8 @@ impl Display for AttemptResult {
 pub fn Login() -> Element {
     let client = use_context::<Arc<Mutex<HttpClient>>>();
     let navigator = use_navigator();
-    let valid_token_redirect = use_context::<Signal<Option<(UserSession, UserInformation)>>>();
-    let mut user_session_login: Signal<Option<(UserSession, UserInformation)>, SyncStorage> =
+    let valid_token_redirect = use_context::<Signal<Option<(UserSession, UserSessionInformation)>>>();
+    let mut user_session_login: Signal<Option<(UserSession, UserSessionInformation)>, SyncStorage> =
         use_signal_sync(|| None);
     let mut log_res: Signal<Option<AttemptResult>> = use_signal(|| None);
     let mut username = use_signal(String::new);

@@ -19,7 +19,7 @@ use diesel::{
 use log::error;
 use rand::{Rng, rng};
 use whatssock_lib::UserSession;
-use whatssock_lib::client::{LoginRequest, RegisterRequest, UserInformation};
+use whatssock_lib::client::{LoginRequest, RegisterRequest, UserSessionInformation};
 use whatssock_lib::server::{LoginResponse, LogoutResponse};
 
 pub async fn fetch_login(
@@ -101,7 +101,7 @@ pub async fn fetch_login(
     }
 
     Ok(Json(LoginResponse {
-        user_information: UserInformation {
+        user_information: UserSessionInformation {
             username: user_account.username,
             chatrooms_joined: user_account.chatrooms_joined,
             user_id: user_account.id,
@@ -183,7 +183,7 @@ pub async fn register_user(
             user_id: user_account.id,
             session_token: session_cookie_token,
         },
-        user_information: UserInformation {
+        user_information: UserSessionInformation {
             username: user_account.username,
             chatrooms_joined: user_account.chatrooms_joined,
             user_id: user_account.id,
@@ -194,7 +194,7 @@ pub async fn register_user(
 pub async fn fetch_session_token(
     State(state): State<ServerState>,
     Json(user_session): Json<UserSession>,
-) -> Result<Json<UserInformation>, StatusCode> {
+) -> Result<Json<UserSessionInformation>, StatusCode> {
     // Get a db connection from the pool
     let mut pg_connection = state.pg_pool.get().map_err(|err| {
         error!(
@@ -220,7 +220,7 @@ pub async fn fetch_session_token(
             StatusCode::REQUEST_TIMEOUT
         })?;
 
-    Ok(Json(UserInformation {
+    Ok(Json(UserSessionInformation {
         username: user_account.username,
         chatrooms_joined: user_account.chatrooms_joined,
         user_id: user_account.id,

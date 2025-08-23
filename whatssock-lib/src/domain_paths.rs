@@ -1,0 +1,10 @@
+pub const POST_SESSION_VERIFICATION: &str = "/api/session";
+pub const POST_LOGIN: &str = "/api/login";
+pub const POST_REGISTER: &str = "/api/register";
+pub const POST_LOGOUT: &str = "/api/logout";
+pub const POST_REQUEST_UK_CHATROOM: &str = "/api/request_unknown_chatroom";
+pub const POST_REQUEST_K_CHATROOM: &str = "/api/request_known_chatroom";
+pub const POST_NEW_CHATROOM: &str = "/api/chatroom_new";
+pub const GET_FETCH_USER: &str = "/api/fetch_user";
+pub const GET_FETCH_MESSAGES: &str = "/api/fetch_messages";
+pub const WS_ESTABLISH_CHATROOM_CONNECTION: &str = "/ws/chatroom";
